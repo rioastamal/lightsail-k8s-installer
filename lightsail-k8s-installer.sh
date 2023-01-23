@@ -22,7 +22,7 @@ LK8S_NUMBER_OF_CP_NODES=1
 [ -z "$LK8S_SSH_PUBLIC_KEY_FILE" ] && LK8S_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_rsa.pub"
 [ -z "$LK8S_SSH_PRIVATE_KEY_FILE" ] && LK8S_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/id_rsa"
 [ -z "$LK8S_FIREWALL_SSH_ALLOW_CIDR" ] && LK8S_FIREWALL_SSH_ALLOW_CIDR="0.0.0.0/0"
-[ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="yes"
+[ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="no"
 
 # See all available OS/Blueprint ID using: `aws lightsail get-blueprints`
 # Only amazon_linux_2 is supported at the moment.

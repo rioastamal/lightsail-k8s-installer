@@ -350,7 +350,7 @@ portInfos:
     toPort: 22
     protocol: tcp
     cidrs:
-      - 0.0.0.0/0
+      - $LK8S_FIREWALL_SSH_ALLOW_CIDR
   - fromPort: 6443
     toPort: 6443
     protocol: tcp
@@ -392,7 +392,7 @@ portInfos:
     toPort: 22
     protocol: tcp
     cidrs:
-      - 0.0.0.0/0
+      - $LK8S_FIREWALL_SSH_ALLOW_CIDR
   - fromPort: 80
     toPort: 80
     protocol: tcp

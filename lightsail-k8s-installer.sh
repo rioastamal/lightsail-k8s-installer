@@ -477,6 +477,7 @@ metadata:
   name: http-echo-deployment
   labels:
     app: http-echo
+    cfstackname: $LK8S_CLOUDFORMATION_STACKNAME
 spec:
   replicas: $_NUMBER_OF_REPLICAS
   selector:
@@ -487,6 +488,7 @@ spec:
       labels:
         app: http-echo
         action: auto-label-node
+        cfstackname: $LK8S_CLOUDFORMATION_STACKNAME
     spec:
       containers:
       - name: http-echo
@@ -531,6 +533,7 @@ metadata:
   name: http-echo-svc-$_NODE_NAME
   labels:
     app: http-echo
+    cfstackname: $LK8S_CLOUDFORMATION_STACKNAME
 spec:
   selector:
     app: http-echo
@@ -595,7 +598,7 @@ lk8s_wait_for_sample_pods_to_be_ready()
     _NUMBER_OF_PODS_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 
 kubectl get pods --show-kind \
   -l 'action=auto-label-node' -l '!node' --no-headers -o wide \
-  --field-selector=status.phase=Running | grep -v 'Terminating' | wc -l
+  --field-selector=status.phase=Running 2>/dev/null | grep -v 'Terminating' | wc -l
 EOF
 )
     [ $_WAIT_COUNTER -ge 3 ] && _WAIT_COUNTER=0

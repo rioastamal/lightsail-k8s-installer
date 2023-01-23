@@ -18,11 +18,14 @@ LK8S_CONFIG_FILE=""
 [ -z "$LK8S_WORKER_LOAD_BALANCER_PREFIX" ] && LK8S_WORKER_LOAD_BALANCER_PREFIX="kube-worker-lb"
 [ -z "$LK8S_POD_NETWORK_CIDR" ] && LK8S_POD_NETWORK_CIDR="10.244.0.0/16"
 [ -z "$LK8S_NUMBER_OF_WORKER_NODES" ] && LK8S_NUMBER_OF_WORKER_NODES=2
-LK8S_NUMBER_OF_CP_NODES=1
 [ -z "$LK8S_SSH_PUBLIC_KEY_FILE" ] && LK8S_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_rsa.pub"
 [ -z "$LK8S_SSH_PRIVATE_KEY_FILE" ] && LK8S_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/id_rsa"
 [ -z "$LK8S_FIREWALL_SSH_ALLOW_CIDR" ] && LK8S_FIREWALL_SSH_ALLOW_CIDR="0.0.0.0/0"
 [ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="no"
+
+# Currently only 1 control plane node supported
+# Todo: Support High Availability Control Plane Cluster
+LK8S_NUMBER_OF_CP_NODES=1
 
 # See all available OS/Blueprint ID using: `aws lightsail get-blueprints`
 # Only amazon_linux_2 is supported at the moment.
@@ -134,7 +137,7 @@ lk8s_get_az_pool_index()
   return 0
 }
 
-lk8s_cf_template_master_node()
+lk8s_cf_template_control_plane_nodes()
 {
   for i in $( seq 1 $LK8S_NUMBER_OF_CP_NODES )
   do
@@ -164,7 +167,7 @@ EOF
   return 0
 }
 
-lk8s_cf_template_worker_node()
+lk8s_cf_template_worker_nodes()
 {
   for i in $( seq 1 $LK8S_NUMBER_OF_WORKER_NODES )
   do
@@ -193,7 +196,7 @@ EOF
   return 0
 }
 
-lk8s_cf_template_load_balancer_worker_node()
+lk8s_cf_template_load_balancer_worker_nodes()
 {
   local _WORKER_INSTANCE_LIST=""
   
@@ -222,9 +225,9 @@ lk8s_run_cloudformation()
 {
   [ "$LK8S_DRY_RUN" = "yes" ] && {
     lk8s_cf_template_header && \
-    lk8s_cf_template_master_node && \
-    lk8s_cf_template_worker_node && \
-    lk8s_cf_template_load_balancer_worker_node
+    lk8s_cf_template_control_plane_nodes && \
+    lk8s_cf_template_worker_nodes && \
+    lk8s_cf_template_load_balancer_worker_nodes
     return 1
   }
 
@@ -235,9 +238,9 @@ lk8s_run_cloudformation()
   }
 
   ( lk8s_cf_template_header && \
-  lk8s_cf_template_master_node && \
-  lk8s_cf_template_worker_node && \
-  lk8s_cf_template_load_balancer_worker_node ) | \
+  lk8s_cf_template_control_plane_nodes && \
+  lk8s_cf_template_worker_nodes && \
+  lk8s_cf_template_load_balancer_worker_nodes ) | \
   aws cloudformation create-stack \
     --stack-name="${LK8S_CLOUDFORMATION_STACKNAME_PREFIX}-$1" \
     --template-body file:///dev/stdin
@@ -262,9 +265,9 @@ lk8s_run_cloudformation()
   return $?
 }
 
-lk8s_run_post_command_master_node()
+lk8s_run_post_command_control_plance_nodes()
 {
-  echo "Running post commands on master nodes..."
+  echo "Running post commands on control plane nodes..."
   local _ETC_HOSTS="$( lk8s_gen_node_etc_hosts )"
   
   for i in $( seq 1 $LK8S_NUMBER_OF_CP_NODES )
@@ -273,7 +276,7 @@ lk8s_run_post_command_master_node()
     lk8s_wait_for_node_to_be_ready $_NODE_NAME
     
     echo "Applying firewall rules on node ${_NODE_NAME}..."
-    lk8s_apply_firewall_rules_master_node $_NODE_NAME > /dev/null
+    lk8s_apply_firewall_rules_control_plane_nodes $_NODE_NAME > /dev/null
     
     local _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )"
     echo "Installing Kubernetes control plane on node ${_NODE_NAME}..."
@@ -341,7 +344,7 @@ EOF
   return 0
 }
 
-lk8s_apply_firewall_rules_master_node()
+lk8s_apply_firewall_rules_control_plane_nodes()
 {
   local _NODE_NAME=$1
   local _RULES=$( cat <<EOF
@@ -661,7 +664,7 @@ lk8s_wait_for_node_to_be_ready()
 
 lk8s_init && \
 lk8s_run_cloudformation $1 && \
-lk8s_run_post_command_master_node && \
+lk8s_run_post_command_control_plance_nodes && \
 lk8s_run_post_command_worker_node && \
 lk8s_deploy_sample_app &&
 lk8s_attach_load_balancer_to_worker_node

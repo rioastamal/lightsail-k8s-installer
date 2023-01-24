@@ -41,10 +41,6 @@ LK8S_INSTALLATION_ID=$1
 [ -z "$LK8S_CP_BUNDLE_ID" ] && LK8S_CP_BUNDLE_ID="micro_2_0"
 [ -z "$LK8S_WORKER_BUNDLE_ID" ] && LK8S_WORKER_BUNDLE_ID="micro_2_0"
 
-# See all available regions using CLI: `aws lightsail get-regions`
-# The AZ list is the same with EC2
-[ -z "$LK8S_AZ_POOL" ] && LK8S_AZ_POOL="ap-southeast-1a ap-southeast-1b ap-southeast-1c"
-
 # Default user data for instance initialization
 LK8S_NODE_USER_DATA=$( cat << 'EOF'
         #!/bin/sh
@@ -90,18 +86,23 @@ lk8s_help()
 Usage: $0 [OPTIONS]
 
 Where OPTIONS:
-  -c CIDR       pod network specified by CIDR
-  -d ID         destroy installation specified by ID
+  -a AZs        specify list of Available Zones using AZs
+  -c CIDR       specify pod network using CIDR
+  -d ID         destroy installation id specified by ID
   -h            print this help and exit
-  -i ID         specify installation using ID
-  -r            dry run mode, print CloudFormation template and exit
-  -w NUM        number of worker nodes specified by NUM
+  -i ID         specify installation id using ID
+  -m            dry run mode, print CloudFormation template and exit
+  -r REGION     specify region using REGION
+  -w NUM        specify number of worker nodes using NUM
   -v            print script version
+  
+----------------------- lightsail-k8s-installer -----------------------
 
 lightsail-k8s-installer is a command line interface to bootstrap Kubernetes 
-cluster on Amazon Lightsail. lightsail-k8s-installer is free software licensed 
-under MIT. Visit the project homepage at 
-http://github.com/rioastamal/lightsail-k8s-installer."
+cluster on Amazon Lightsail. 
+
+lightsail-k8s-installer is free software licensed under MIT. Visit the project 
+homepage at http://github.com/rioastamal/lightsail-k8s-installer."
 }
 
 lk8s_write_log()
@@ -128,7 +129,7 @@ lk8s_log_waiting()
 }
 
 lk8s_err() {
-    echo "[ERROR]: $@" >&2
+    echo "[LK8S ERROR]: $@" >&2
     lk8s_write_log "$@"
 }
 
@@ -141,14 +142,35 @@ lk8s_init()
     return 1
   }
   
+  # See all available regions using CLI: `aws lightsail get-regions`
+  [ -z "$LK8S_REGION" ] && {
+    [ ! -z "$AWS_REGION" ] && LK8S_REGION=$AWS_REGION
+    [ -z "$AWS_REGION" ] && {
+      [ ! -z "$AWS_DEFAULT_REGION" ] && LK8S_REGION=$AWS_DEFAULT_REGION
+      [ -z "$AWS_DEFAULT_REGION" ] && LK8S_REGION="us-east-1"
+    }
+  }
+  
+  export AWS_REGION=$LK8S_REGION
+  
+  # The AZ list is the same with EC2
+  [ -z "$LK8S_AZ_POOL" ] && {
+    LK8S_AZ_POOL=""
+    
+    for az in a b c
+    do
+      LK8S_AZ_POOL="${LK8S_AZ_POOL}${LK8S_REGION}${az} "
+    done
+  }
+  
   LK8S_CLOUDFORMATION_STACKNAME=$LK8S_CLOUDFORMATION_STACKNAME_PREFIX-$LK8S_INSTALLATION_ID
   LK8S_CONTROL_PLANE_NODE_PREFIX=$LK8S_CONTROL_PLANE_NODE_PREFIX-$LK8S_CLOUDFORMATION_STACKNAME
   LK8S_WORKER_NODE_PREFIX=$LK8S_WORKER_NODE_PREFIX-$LK8S_CLOUDFORMATION_STACKNAME
   LK8S_WORKER_LOAD_BALANCER_PREFIX=$LK8S_WORKER_LOAD_BALANCER_PREFIX-$LK8S_CLOUDFORMATION_STACKNAME
   
   local _LOG_SUFFIX="$( date +"%Y%m%d%H%M%S" )"
-  LK8S_LOG_FILE="${LK8S_OUTPUT_DIR}/${LK8S_CLOUDFORMATION_STACKNAME}-${_LOG_SUFFIX}.log"
-  
+  LK8S_LOG_FILE="${LK8S_OUTPUT_DIR}/${LK8S_REGION}-${LK8S_CLOUDFORMATION_STACKNAME}-${_LOG_SUFFIX}.log"
+
   return 0
 }
 
@@ -275,6 +297,7 @@ lk8s_cf_template_header()
 lk8s_run_cloudformation()
 {
   [ "$LK8S_DRY_RUN" = "yes" ] && {
+    lk8s_is_region_and_az_valid && \
     lk8s_cf_template_header && \
     lk8s_cf_template_control_plane_nodes && \
     lk8s_cf_template_worker_nodes && \
@@ -291,6 +314,8 @@ lk8s_run_cloudformation()
   lk8s_char_repeat "-" $( echo $_TITLE | wc -c ) && echo
   echo "This process will create Kubernetes cluster on Amazon Lightsail"
   echo "Resources: $LK8S_NUMBER_OF_CP_NODES control plane node, $LK8S_NUMBER_OF_WORKER_NODES worker nodes and 1 load balancer"
+  echo "Region: $LK8S_REGION"
+  echo "AZs worker pool: $LK8S_AZ_POOL"
   echo "CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME"
   
   echo
@@ -299,6 +324,8 @@ lk8s_run_cloudformation()
   echo "To view detailed log, run following command on another terminal:"
   echo "  tail -f $LK8S_LOG_FILE"
   echo
+  
+  lk8s_is_region_and_az_valid || return 1
 
   lk8s_log "Checking existing stack '${LK8S_CLOUDFORMATION_STACKNAME}'"
   # Do not create when the stack already exists
@@ -516,8 +543,6 @@ lk8s_print_installation_info()
   local _LB_URL=$( aws lightsail get-load-balancer --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX | jq -r '.loadBalancer.dnsName' )
   local _KUBERNETES_INFO="$( lk8s_ssh_to_node $_CONTROL_PLANE_IP kubectl get nodes,services,deployments,pods )"
   local _INFO=$( cat <<EOF
-Installation COMPLETED.
-
 Your Kubernetes installation info:
 $_KUBERNETES_INFO
 
@@ -532,8 +557,11 @@ You can view detailed installation log at:
 
 EOF
 )
-
   lk8s_log "$_INFO"
+  echo
+  lk8s_log "Installation COMPLETED."
+  
+  return 0
 }
 
 lk8s_gen_join_command()
@@ -793,12 +821,17 @@ lk8s_destroy_installation()
   
   local _ANSWER="no"
   
-  echo "This action will destroy CloudFormation stack '$LK8S_CLOUDFORMATION_STACKNAME'."
+  echo "This action will destroy CloudFormation stack '$LK8S_CLOUDFORMATION_STACKNAME' ($LK8S_REGION)."
   read -p "Type 'yes' to continue: " _ANSWER
   
   [ "$_ANSWER" != "yes" ] && {
     echo "Aborted."
     return 0
+  }
+  
+  lk8s_is_region_valid $LK8S_REGION || {
+    echo "[ERROR]: Region is not valid." >&2
+    return 1
   }
   
   $_CMD_TO_RUN >> $LK8S_LOG_FILE 2>&1
@@ -819,15 +852,94 @@ lk8s_destroy_installation()
   
   echo
   lk8s_log "Installation '$LK8S_INSTALLATION_ID' has been destroyed."
+  
+  return 0
+}
+
+lk8s_get_lightsail_regions()
+{
+  local _REGIONS="$( aws lightsail get-regions | jq -r '.regions[].name' )"
+  
+  echo "$_REGIONS"
+  
+  return 0
+}
+
+lk8s_is_region_valid()
+{
+  local _REGION_NAME=$1
+  local _REGIONS=$( lk8s_get_lightsail_regions )
+  local _VALID="false"
+  
+  for region in $_REGIONS
+  do
+    [ "$region" = "$_REGION_NAME" ] && {
+      _VALID="true"
+      break
+    }
+  done
+  
+  [ "$_VALID" = "false" ] && return 1
+  
+  return 0
+}
+
+lk8s_get_region_az()
+{
+  local _REGION_NAME=$1
+  local _AZ=$( aws ec2 describe-availability-zones --region $_REGION_NAME | \
+    jq -r '.AvailabilityZones[].ZoneName' )
+  
+  echo "$_AZ"
+}
+
+lk8s_is_az_valid()
+{
+  local _REGION=$1
+  local _AZ=$2
+  local _AZ_LIST="$( lk8s_get_region_az $_REGION )"
+  local _NUMBER_OF_AZ=$( echo "$_AZ" | wc -w )
+  local _VALID=0
+  
+  for our_az in $_AZ
+  do
+    for their_az in $_AZ_LIST
+    do
+      [ "$our_az" = "$their_az" ] && _VALID=$(( $_VALID + 1 ))
+    done
+  done
+  
+  [ "$_VALID" = "$_NUMBER_OF_AZ" ] && return 0
+  
+  return 1
+}
+
+lk8s_is_region_and_az_valid()
+{
+  lk8s_is_region_valid $LK8S_REGION || {
+    echo "[ERROR]: Region is not valid." >&2
+    return 1
+  }
+  
+  lk8s_is_az_valid $LK8S_REGION "$LK8S_AZ_POOL" || {
+    echo "[ERROR]: One of the value of availability zones is not valid." >&2
+    return 1
+  }
+  
+  return 0
 }
 
 # Default action
 LK8S_ACTION="install"
 
 # Parse the arguments
-while getopts c:d:hi:rw:v LK8S_OPT;
+while getopts a:c:d:hi:mr:w:v LK8S_OPT;
 do
     case $LK8S_OPT in
+        a)
+          LK8S_AZ_POOL="$OPTARG"
+        ;;
+
         c)
           LK8S_POD_NETWORK_CIDR="$OPTARG"
         ;;
@@ -845,9 +957,13 @@ do
         i)
             LK8S_INSTALLATION_ID="$OPTARG"
         ;;
+        
+        m)
+            LK8S_DRY_RUN="yes"
+        ;;
 
         r)
-            LK8S_DRY_RUN="yes"
+            LK8S_REGION="$OPTARG"
         ;;
 
         w)

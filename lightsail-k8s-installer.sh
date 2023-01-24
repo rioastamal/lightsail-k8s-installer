@@ -567,6 +567,7 @@ lk8s_print_installation_info()
   local _CONTROL_PLANE_IP=$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )
   local _LB_URL=$( aws lightsail get-load-balancer --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX | jq -r '.loadBalancer.dnsName' )
   local _KUBERNETES_INFO="$( lk8s_ssh_to_node $_CONTROL_PLANE_IP kubectl get nodes,services,deployments,pods )"
+  local _BACKSLASH='\'
   local _INFO=$( cat <<EOF
 Your Kubernetes installation info:
 $_KUBERNETES_INFO
@@ -581,7 +582,7 @@ You can view detailed installation log at:
   $LK8S_LOG_FILE
   
 To delete sample app run following on Control plane:
-  kubectl get services,deployments --no-headers -o name \\
+  kubectl get services,deployments --no-headers -o name $_BACKSLASH
     -l cfstackname=$LK8S_CLOUDFORMATION_STACKNAME | xargs kubectl delete
 
 EOF

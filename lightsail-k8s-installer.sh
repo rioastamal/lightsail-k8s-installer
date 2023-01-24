@@ -30,6 +30,9 @@ LK8S_DEBUG="true"
 # Todo: Support High Availability Control Plane Cluster
 LK8S_NUMBER_OF_CP_NODES=1
 
+# Required tools to perform tasks
+LK8S_REQUIRED_TOOLS="awk aws cat cut date sed ssh tr wc"
+
 # See all available OS/Blueprint ID using: `aws lightsail get-blueprints`
 # Only amazon_linux_2 is supported at the moment.
 LK8S_CP_OS_ID="amazon_linux_2"
@@ -135,7 +138,13 @@ lk8s_init()
     echo "Missing installation id. See -h for help." >&2
     return 1
   }
-  
+
+  local _MISSING_TOOL=$( lk8s_missing_tool )
+  [ ! -z "$_MISSING_TOOL" ] && {
+    echo "Missing tool: ${_MISSING_TOOL}. Make sure it is installed and available in your PATH." 2>&2
+    return 1
+  }
+
   # See all available regions using CLI: `aws lightsail get-regions`
   [ -z "$LK8S_REGION" ] && {
     [ ! -z "$AWS_REGION" ] && LK8S_REGION=$AWS_REGION
@@ -1000,6 +1009,20 @@ lk8s_get_monthly_estimated_cost()
   local _TOTAL_WORKER_COST=$( echo "$LK8S_NUMBER_OF_WORKER_NODES $_WORKER_PRICE" | awk '{printf "%.2f", $1 * $2}' )
   
   echo "$_TOTAL_CP_COST $_TOTAL_WORKER_COST $_LOAD_BALANCER_PRICE" | awk '{printf "%.2f", $1 + $2 + $3}'
+  return 0
+}
+
+lk8s_missing_tool()
+{
+  for tool in $LK8S_REQUIRED_TOOLS
+  do
+    command -v $tool >/dev/null || {
+      echo "$tool"
+      return 1
+    }
+  done
+  
+  echo ""
   return 0
 }
 

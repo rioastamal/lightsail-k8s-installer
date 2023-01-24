@@ -5,8 +5,7 @@
 
 readonly LK8S_SCRIPT_NAME=$( basename "$0" )
 LK8S_BASEDIR=$( realpath "$( dirname "$0" )" )
-LK8S_VERSION="2023-01-21"
-LK8S_DEBUG="true"
+LK8S_VERSION="1.0"
 
 # Path to directory to store application outputs
 [ ! -d "$LK8S_OUTPUT_DIR/.out" ] && LK8S_OUTPUT_DIR="$LK8S_BASEDIR/.out"
@@ -25,6 +24,7 @@ LK8S_DEBUG="true"
 [ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="no"
 [ -z "$LK8S_CONTROL_PLANE_PLAN"] && LK8S_CONTROL_PLANE_PLAN="5_usd"
 [ -z "$LK8S_WORKER_PLAN"] && LK8S_WORKER_PLAN="5_usd"
+[ -z "$LK8S_DEBUG" ] && LK8S_DEBUG="true"
 
 # Currently only 1 control plane node supported
 # Todo: Support High Availability Control Plane Cluster

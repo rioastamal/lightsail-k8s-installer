@@ -346,8 +346,8 @@ EOF
   lk8s_log "Checking existing stack '${LK8S_CLOUDFORMATION_STACKNAME}'"
   # Do not create when the stack already exists
   aws cloudformation describe-stacks --stack-name=$LK8S_CLOUDFORMATION_STACKNAME >>$LK8S_LOG_FILE 2>&1 && {
-    lk8s_log "Stack already exists. Skip."
-    return 0
+    lk8s_log "Stack already exists. Aborted!"
+    return 1
   }
   
   lk8s_log "Stack '${LK8S_CLOUDFORMATION_STACKNAME}' is not exists, good!"
@@ -572,7 +572,7 @@ You can view detailed installation log at:
   $LK8S_LOG_FILE
   
 To delete sample app run following on Control plane:
-  kubectl get services,deployments --no-headers -o name \
+  kubectl get services,deployments --no-headers -o name \\
     -l cfstackname=$LK8S_CLOUDFORMATION_STACKNAME | xargs kubectl delete
 
 EOF

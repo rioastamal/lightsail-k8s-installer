@@ -16,6 +16,28 @@ sh lightsail-k8s-installer.sh -d demo
 
 You can also use CloudFormation console or AWS CLI to delete the stack.
 
+Navigate:
+
+ - [Requirements](#requirements)
+ - [Installation](#installation)
+ - [Usage and Examples](#usage-and-examples)
+    - [Create cluster in specific region](#create-cluster-in-specific-region)
+    - [Specify Availability Zones pool](#specify-availability-zones-pool)
+    - [Custom CIDR for Pod network](#custom-cidr-for-pod-network)
+    - [Lightsail instance plan](#lightsail-instance-plan)
+    - [Dry run mode](#dry-run-mode)
+    - [Environment variables](#environment-variables)
+  - [FAQ](#faq)
+    - [What OS is used in all nodes?](#what-os-is-used-in-all-nodes)
+    - [What network Pod add-on is used?](#what-network-pod-add-on-is-used)
+    - [Is high availability control plane cluster supported?](#is-high-availability-control-plane-cluster-supported)
+    - [How worker node is placed on each AZ?](#how-worker-node-is-placed-on-each-az)
+    - [How sample app is configured?](#how-sample-app-is-configured)
+    - [How to delete sample app?](#how-to-delete-sample-app)
+    - [The installation is stuck, what should I do?](#the-installation-is-stuck-what-should-i-do)
+    - [Is it safe to delete installation via CloudFormation console?](#is-it-safe-to-delete-installation-via-cloudformation-console)
+  - [Contributing](#contributing)
+  - [License](#license)
 ## Requirements
 
 Things you need to run this script:
@@ -23,7 +45,7 @@ Things you need to run this script:
 - Active AWS account and make sure it has permissions to create Lightsail and CloudFormation resources.
 - AWS CLI v2
 - SSH client
-- Basic shell utilise such as `awk`, `cat`, `cut`, `date`, `sed`, `tr`, `wc`.
+- Basic shell utilities such as `awk`, `cat`, `cut`, `date`, `sed`, `tr`, `wc`.
 
 lightsail-k8s-installer has been tested using Bash v4.2 but it should work for other shells.
 
@@ -75,12 +97,12 @@ sh lightsail-k8s-installer.sh -i demo -w 4
 ```
 
 ```
-------------------------------------
-lightsail-k8s-installer v2023-01-21
-------------------------------------
+-----------------------------
+lightsail-k8s-installer v1.0
+-----------------------------
 This process will create Kubernetes cluster on Amazon Lightsail.
 
-CloudFormation stack: lk8s-namer
+CloudFormation stack: lk8s-demo
               Region: us-east-1
      AZs worker pool: us-east-1a us-east-1b us-east-1c 
            Resources: - 1 control plane node (plan: $5)
@@ -154,7 +176,7 @@ Valid values: `3_5_usd`, `5_usd`, `10_usd`, `20_usd`, `40_usd`, `80_usd`, `160_u
 
 ### Dry run mode
 
-If you want run the script in dry run mode it will print CloudFormation template and then exit. It may useful if you want to inspect what resources that going to be created.
+To run the script in dry run mode, use `-m` option. It will print the CloudFormation template and then exit. This can be useful for inspecting the resources that will be created.
 
 ```sh
 sh lightsail-k8s-installer.sh -i demo -r ap-southeast-1 -m
@@ -180,6 +202,58 @@ LK8S_FIREWALL_SSH_ALLOW_CIDR | 0.0.0.0/0 | Allow from everywhere
 LK8S_DRY_RUN | no | |
 LK8S_CONTROL_PLANE_PLAN | 5_usd | Lightsail instance plan
 LK8S_WORKER_PLAN | 5_usd | Lightsail instance plan
+LK8S_DEBUG | true | |
+
+## FAQ
+
+### What OS is used in all nodes?
+
+[Amazon Linux 2](https://aws.amazon.com/amazon-linux-2/). Amazon Linux 2 uses yum as package manager similar with Fedora, CentOS and RHEL.
+
+### What network Pod add-on is used?
+
+We use [flannel](https://github.com/flannel-io/flannel). You're free to modify and change the network by yourself after cluster is up and running.
+
+### Is high availability control plane cluster supported?
+
+Not yet. But it is on the roadmap.
+
+### How worker node is placed on each AZ?
+
+The worker node placed sequentially. For example if you specify 5 worker nodes on 2 AZs (us-east-1a and us-east-1b) here's the allocation.
+
+Worker | AZ
+-------|---
+Worker node 1 | us-east-1a
+Worker node 2 | us-east-1b
+Worker node 3 | us-east-1a
+Worker node 4 | us-east-1b
+Worker Node 5 | us-east-1a
+
+### How sample app is configured?
+
+The sample app uses [hashicorp/http-echo](https://hub.docker.com/r/hashicorp/http-echo/) image which run on port 80. The installation script automatically adds a new label, `node=[NODE_NAME]` to each pod that has the label `action=auto-label-node`.
+
+Then the script create new Kubernetes Service for each worker node and set the `externalIPs` to bind to Lightsail instance private IP. Each service has pod selector which is based on node name `app=http-echo,node=[NODE_NAME]`.
+
+By doing this Lightsail Load Balancer able to distribute traffic evenly to each worker node.
+
+### How to delete sample app?
+
+SSH into control plane node and run following command:
+
+```sh
+kubectl get services,deployments --no-headers -o name \
+  -l cfstackname=[CLOUDFORMATION_STACKNAME] | xargs kubectl delete
+```
+
+### The installation is stuck, what should I do?
+
+See the log file at `.out/[REGION]-[CLOUDFORMATION_STACK_NAME]-[TIME].log`. If you did not find the issue then open CloudFormation console. Most of the time this is caused by CloudFormation failed to create a resource such as failed to create Amazon Lightsail Instance due permission issue or you do not have enough quota.
+
+### Is it safe to delete installation via CloudFormation console?
+
+Yes it is totally safe. It will destroy all resources created by lightsail-k8s-installer.
 
 ## Contributing
 

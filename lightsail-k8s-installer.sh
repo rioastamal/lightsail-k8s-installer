@@ -23,6 +23,8 @@ LK8S_DEBUG="true"
 [ -z "$LK8S_SSH_PRIVATE_KEY_FILE" ] && LK8S_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/id_rsa"
 [ -z "$LK8S_FIREWALL_SSH_ALLOW_CIDR" ] && LK8S_FIREWALL_SSH_ALLOW_CIDR="0.0.0.0/0"
 [ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="no"
+[ -z "$LK8S_CONTROL_PLANE_PLAN"] && LK8S_CONTROL_PLANE_PLAN="5_usd"
+[ -z "$LK8S_WORKER_PLAN"] && LK8S_WORKER_PLAN="5_usd"
 
 # Currently only 1 control plane node supported
 # Todo: Support High Availability Control Plane Cluster
@@ -32,14 +34,6 @@ LK8S_NUMBER_OF_CP_NODES=1
 # Only amazon_linux_2 is supported at the moment.
 LK8S_CP_OS_ID="amazon_linux_2"
 LK8S_WORKER_OS_ID="amazon_linux_2"
-LK8S_INSTALLATION_ID=$1
-
-# See all available Bundle ID using CLI: `aws lightsail get-bundles`
-# micro_2_0 -> 1vCPU & 1GB RAM
-# small_2_0 -> 1vCPU & 2GB RAM
-# medium_2_0 -> 2vCPU & 4GB RAM
-[ -z "$LK8S_CP_BUNDLE_ID" ] && LK8S_CP_BUNDLE_ID="micro_2_0"
-[ -z "$LK8S_WORKER_BUNDLE_ID" ] && LK8S_WORKER_BUNDLE_ID="micro_2_0"
 
 # Default user data for instance initialization
 LK8S_NODE_USER_DATA=$( cat << 'EOF'
@@ -309,14 +303,36 @@ lk8s_run_cloudformation()
   local _TITLE="lightsail-k8s-installer v${LK8S_VERSION}"
   local _ANY_KEY=""
   
+  # See all available Bundle ID using CLI: `aws lightsail get-bundles`
+  LK8S_CP_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_CONTROL_PLANE_PLAN )" || {
+    lk8s_err "Control plane plan '$LK8S_CONTROL_PLANE_PLAN' is not valid"
+    return 1
+  }
+  
+  LK8S_WORKER_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_WORKER_PLAN )" || {
+    lk8s_err "Worker plan '$LK8S_WORKER_PLAN' is not valid"
+    return 1
+  }
+  
+  local _MONTHLY_COST=$( lk8s_get_monthly_estimated_cost )
+  local _HOURLY_COST=$( echo "$_MONTHLY_COST 30 24" | awk '{printf "%.2f", $1 / $2 / $3}' )
+  local _CP_PRICE=$( lk8s_get_control_plane_plan_price )
+  local _WORKER_PRICE=$( lk8s_get_worker_plan_price )
+  
   lk8s_char_repeat "-" $( echo $_TITLE | wc -c ) && echo
   echo $_TITLE
   lk8s_char_repeat "-" $( echo $_TITLE | wc -c ) && echo
-  echo "This process will create Kubernetes cluster on Amazon Lightsail"
-  echo "Resources: $LK8S_NUMBER_OF_CP_NODES control plane node, $LK8S_NUMBER_OF_WORKER_NODES worker nodes and 1 load balancer"
-  echo "Region: $LK8S_REGION"
-  echo "AZs worker pool: $LK8S_AZ_POOL"
-  echo "CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME"
+  cat <<EOF
+This process will create Kubernetes cluster on Amazon Lightsail.
+
+CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
+              Region: $LK8S_REGION
+     AZs worker pool: $LK8S_AZ_POOL
+           Resources: - $LK8S_NUMBER_OF_CP_NODES control plane node (plan: \$${_CP_PRICE})
+                      - $LK8S_NUMBER_OF_WORKER_NODES worker nodes (plan: \$${_WORKER_PRICE})
+                      - 1 load balancer (plan: \$18)
+      Estimated cost: \$${_MONTHLY_COST}/month or \$${_HOURLY_COST}/hour
+EOF
   
   echo
   read -p "Press any key to continue: " _ANY_KEY
@@ -936,6 +952,54 @@ lk8s_is_region_and_az_valid()
     return 1
   }
   
+  return 0
+}
+
+lk8s_get_bundle_ids()
+{
+  cat <<EOF
+{
+  "3_5_usd": "nano_2_0",
+  "5_usd": "micro_2_0",
+  "10_usd": "small_2_0",
+  "20_usd": "medium_2_0",
+  "40_usd": "large_2_0",
+  "80_usd": "xlarge_2_0",
+  "160_usd": "2xlarge_2_0"
+}
+EOF
+}
+
+lk8s_is_package_valid()
+{
+  local _PACKAGE=$1
+  (lk8s_get_bundle_ids | jq -r -e ".[\"$_PACKAGE\"]" 2>/dev/null) || return 1
+  
+  return 0
+}
+
+lk8s_get_control_plane_plan_price()
+{
+  echo "$LK8S_CONTROL_PLANE_PLAN" | sed 's/_usd//;s/_/\./'
+  return 0
+}
+
+lk8s_get_worker_plan_price()
+{
+  echo "$LK8S_CONTROL_PLANE_PLAN" | sed 's/_usd//;s/_/\./'
+  return 0
+}
+
+lk8s_get_monthly_estimated_cost()
+{
+  local _CONTROL_PLANE_PRICE=$( lk8s_get_control_plane_plan_price )
+  local _WORKER_PRICE=$( lk8s_get_worker_plan_price )
+  local _LOAD_BALANCER_PRICE=18.0
+  
+  local _TOTAL_CP_COST=$( echo "$LK8S_NUMBER_OF_CP_NODES $_CONTROL_PLANE_PRICE" | awk '{printf "%.2f", $1 * $2}' )
+  local _TOTAL_WORKER_COST=$( echo "$LK8S_NUMBER_OF_WORKER_NODES $_WORKER_PRICE" | awk '{printf "%.2f", $1 * $2}' )
+  
+  echo "$_TOTAL_CP_COST $_TOTAL_WORKER_COST $_LOAD_BALANCER_PRICE" | awk '{printf "%.2f", $1 + $2 + $3}'
   return 0
 }
 

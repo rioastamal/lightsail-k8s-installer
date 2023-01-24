@@ -554,6 +554,10 @@ Your app are available via load balancer:
 
 You can view detailed installation log at:
   $LK8S_LOG_FILE
+  
+To delete sample app run following on Control plane:
+  kubectl get services,deployments --no-headers -o name \
+    -l cfstackname=$LK8S_CLOUDFORMATION_STACKNAME | xargs kubectl delete
 
 EOF
 )
@@ -834,10 +838,16 @@ lk8s_destroy_installation()
     return 1
   }
   
+  echo
+  lk8s_log "Checking CloudFormation stack '$LK8S_CLOUDFORMATION_STACKNAME'"
+  aws cloudformation describe-stacks --stack-name $LK8S_CLOUDFORMATION_STACKNAME \
+    2>>$LK8S_LOG_FILE >/dev/null || {
+    lk8s_log "Stack not found, aborted."
+    return 1
+  }
+  
   $_CMD_TO_RUN >> $LK8S_LOG_FILE 2>&1
   local _WAIT_COUNTER=1
-  
-  echo
   
   while :
   do

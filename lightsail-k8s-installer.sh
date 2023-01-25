@@ -235,6 +235,17 @@ lk8s_cf_template_control_plane_nodes()
             ToPort: 22
             Cidrs:
               - $LK8S_FIREWALL_SSH_ALLOW_CIDR
+      Tags:
+        - Key: cf-$LK8S_CLOUDFORMATION_STACKNAME
+        - Key: lightsail-k8s-installer
+        - Key: type-cp-$LK8S_INSTALLATION_ID
+        - Key: installation-id-$LK8S_INSTALLATION_ID
+        - Key: installer
+          Value: lightsail-k8s-installer
+        - Key: cfstackname
+          Value: $LK8S_CLOUDFORMATION_STACKNAME
+        - Key: node-type
+          Value: control-plane
       UserData: |
 $LK8S_NODE_USER_DATA
 EOF
@@ -264,6 +275,18 @@ lk8s_cf_template_worker_nodes()
             ToPort: 22
             Cidrs:
               - $LK8S_FIREWALL_SSH_ALLOW_CIDR
+      Tags:
+        - Key: cf-$LK8S_CLOUDFORMATION_STACKNAME
+        - Key: lightsail-k8s-installer
+        - Key: type-worker-$LK8S_INSTALLATION_ID
+        - Key: installation-id-$LK8S_INSTALLATION_ID
+        - Key: installer
+          Value: lightsail-k8s-installer
+        - Key: cfstackname
+          Value: $LK8S_CLOUDFORMATION_STACKNAME
+        - Key: node-type
+          Value: worker
+
       UserData: |
 $LK8S_NODE_USER_DATA
 EOF
@@ -299,6 +322,17 @@ lk8s_cf_template_header()
 
 lk8s_run_cloudformation()
 {
+  # See all available Bundle ID using CLI: `aws lightsail get-bundles`
+  LK8S_CP_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_CONTROL_PLANE_PLAN )" || {
+    lk8s_err "Control plane plan '$LK8S_CONTROL_PLANE_PLAN' is not valid"
+    return 1
+  }
+  
+  LK8S_WORKER_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_WORKER_PLAN )" || {
+    lk8s_err "Worker plan '$LK8S_WORKER_PLAN' is not valid"
+    return 1
+  }
+  
   [ "$LK8S_DRY_RUN" = "yes" ] && {
     lk8s_is_region_and_az_valid && \
     lk8s_cf_template_header && \
@@ -311,17 +345,6 @@ lk8s_run_cloudformation()
   local _ANSWER="no"
   local _TITLE="lightsail-k8s-installer v${LK8S_VERSION}"
   local _ANY_KEY=""
-  
-  # See all available Bundle ID using CLI: `aws lightsail get-bundles`
-  LK8S_CP_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_CONTROL_PLANE_PLAN )" || {
-    lk8s_err "Control plane plan '$LK8S_CONTROL_PLANE_PLAN' is not valid"
-    return 1
-  }
-  
-  LK8S_WORKER_BUNDLE_ID="$( lk8s_is_package_valid $LK8S_WORKER_PLAN )" || {
-    lk8s_err "Worker plan '$LK8S_WORKER_PLAN' is not valid"
-    return 1
-  }
   
   local _MONTHLY_COST=$( lk8s_get_monthly_estimated_cost )
   local _HOURLY_COST=$( echo "$_MONTHLY_COST 30 24" | awk '{printf "%.2f", $1 / $2 / $3}' )
@@ -567,7 +590,7 @@ lk8s_print_installation_info()
   local _CONTROL_PLANE_IP=$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )
   local _LB_URL=$( aws lightsail get-load-balancer --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX | jq -r '.loadBalancer.dnsName' )
   local _KUBERNETES_INFO="$( lk8s_ssh_to_node $_CONTROL_PLANE_IP kubectl get nodes,services,deployments,pods )"
-  local _BACKSLASH='\'
+  local _BACKSLASH=$( printf '%b' '\134' ) # backslash
   local _INFO=$( cat <<EOF
 Your Kubernetes installation info:
 $_KUBERNETES_INFO

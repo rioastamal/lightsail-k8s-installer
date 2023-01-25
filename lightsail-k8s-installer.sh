@@ -259,6 +259,31 @@ lk8s_cf_template_control_plane_nodes()
             ToPort: 22
             Cidrs:
               - $LK8S_FIREWALL_SSH_ALLOW_CIDR
+          - FromPort: 6443
+            ToPort: 6443
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 2379
+            ToPort: 2380
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 10250
+            ToPort: 10250
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 10257
+            ToPort: 10257
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 10259
+            ToPort: 10259
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
       Tags:
         - Key: cf-$LK8S_CLOUDFORMATION_STACKNAME
         - Key: lightsail-k8s-installer
@@ -299,6 +324,21 @@ lk8s_cf_template_worker_nodes()
             ToPort: 22
             Cidrs:
               - $LK8S_FIREWALL_SSH_ALLOW_CIDR
+          - FromPort: 80
+            ToPort: 80
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 30000
+            ToPort: 32767
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
+          - FromPort: 10250
+            ToPort: 10250
+            Protocol: tcp
+            Cidrs:
+              - 172.26.0.0/16
       Tags:
         - Key: cf-$LK8S_CLOUDFORMATION_STACKNAME
         - Key: lightsail-k8s-installer
@@ -457,13 +497,11 @@ lk8s_run_post_command_control_plance_nodes()
     local _NODE_NAME=$LK8S_CONTROL_PLANE_NODE_PREFIX-$i
     lk8s_wait_for_node_to_be_ready $_NODE_NAME
     
-    lk8s_log "Applying firewall rules on node '${_NODE_NAME}'"
-    lk8s_apply_firewall_rules_control_plane_nodes $_NODE_NAME > /dev/null
-    
-    local _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )"
+    local _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME 2>>$LK8S_LOG_FILE \
+      | jq -r .instance.publicIpAddress )"
     lk8s_log "Installing Kubernetes control plane on node ${_NODE_NAME}"
     
-    cat <<EOF | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE
+    local _KUBERNETES_INSTALL_CMD=$( cat <<EOF
 [ "\$( hostname )" != "$_NODE_NAME" ] && {
   sudo hostnamectl set-hostname $_NODE_NAME
 }
@@ -490,6 +528,9 @@ CP_NODE_STATUS="\$( kubectl get nodes --no-headers | awk '{print \$2}' )"
   sed 's#10.244.0.0/16#$LK8S_POD_NETWORK_CIDR#' | kubectl apply -f -
 }
 EOF
+)
+    echo "$_KUBERNETES_INSTALL_CMD" >> $LK8S_LOG_FILE
+    echo "$_KUBERNETES_INSTALL_CMD" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
   done
   
   return 0
@@ -505,14 +546,9 @@ lk8s_run_post_command_worker_node()
     local _NODE_NAME=$LK8S_WORKER_NODE_PREFIX-$i
     lk8s_wait_for_node_to_be_ready $_NODE_NAME
     
-    lk8s_log "Applying firewall rules on node '${_NODE_NAME}'"
-    lk8s_apply_firewall_rules_worker_node $_NODE_NAME >> $LK8S_LOG_FILE
-    
     local _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )"
     local _JOIN_CMD=$( lk8s_gen_join_command )
-    
-    lk8s_log "Joining worker node '$_NODE_NAME' to control plane"
-    cat <<EOF | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE
+    local _KUBERNETES_WORKER_CMD=$(cat <<EOF
 [ "\$( hostname )" != "$_NODE_NAME" ] && {
   sudo hostnamectl set-hostname $_NODE_NAME
 }
@@ -523,83 +559,13 @@ grep $_NODE_NAME /etc/hosts >/dev/null || (
 
 sudo $_JOIN_CMD
 EOF
+)
+    lk8s_log "Joining worker node '$_NODE_NAME' to control plane"
+    echo "$_KUBERNETES_WORKER_CMD" >> $LK8S_LOG_FILE
+    echo "$_KUBERNETES_WORKER_CMD" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
   done
-  
+
   return 0
-}
-
-lk8s_apply_firewall_rules_control_plane_nodes()
-{
-  local _NODE_NAME=$1
-  local _RULES=$( cat <<EOF
-portInfos:
-  - fromPort: 22
-    toPort: 22
-    protocol: tcp
-    cidrs:
-      - $LK8S_FIREWALL_SSH_ALLOW_CIDR
-  - fromPort: 6443
-    toPort: 6443
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 2379
-    toPort: 2380
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 10250
-    toPort: 10250
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 10257
-    toPort: 10257
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 10259
-    toPort: 10259
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-EOF
-)
-  aws lightsail put-instance-public-ports \
-    --instance-name=$_NODE_NAME \
-    --cli-input-yaml "$_RULES"
-}
-
-lk8s_apply_firewall_rules_worker_node()
-{
-  local _NODE_NAME=$1
-  local _RULES=$( cat <<EOF
-portInfos:
-  - fromPort: 22
-    toPort: 22
-    protocol: tcp
-    cidrs:
-      - $LK8S_FIREWALL_SSH_ALLOW_CIDR
-  - fromPort: 80
-    toPort: 80
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 30000
-    toPort: 32767
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-  - fromPort: 10250
-    toPort: 10250
-    protocol: tcp
-    cidrs:
-      - 172.26.0.0/16
-EOF
-)
-  aws lightsail put-instance-public-ports \
-    --instance-name=$_NODE_NAME \
-    --cli-input-yaml "$_RULES"
 }
 
 lk8s_attach_load_balancer_to_worker_node()
@@ -613,7 +579,7 @@ lk8s_attach_load_balancer_to_worker_node()
   lk8s_log "Attaching worker nodes to Lightsail Load Balancer"
   aws lightsail attach-instances-to-load-balancer \
     --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX \
-    --instance-names $_INSTANCE_NAMES >> $LK8S_LOG_FILE
+    --instance-names $_INSTANCE_NAMES >> $LK8S_LOG_FILE 2>&1
     
   return 0
 }
@@ -821,7 +787,7 @@ lk8s_wait_for_sample_pods_to_be_ready()
   
   while [ $_NUMBER_OF_PODS_READY -lt $_NUMBER_OF_REPLICAS ]
   do
-    _NUMBER_OF_PODS_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 
+    _NUMBER_OF_PODS_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 2>> $LK8S_LOG_FILE
 kubectl get pods --show-kind \
   -l 'action=auto-label-node' -l '!node' --no-headers -o wide \
   --field-selector=status.phase=Running 2>/dev/null | grep -v 'Terminating' | wc -l
@@ -852,7 +818,7 @@ lk8s_wait_for_kubelet_worker_to_be_ready()
   
   while [ $_NUMBER_OF_KUBELET_WORKER_READY -lt $LK8S_NUMBER_OF_WORKER_NODES ]
   do
-    _NUMBER_OF_KUBELET_WORKER_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 
+    _NUMBER_OF_KUBELET_WORKER_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 2>>$LK8S_LOG_FILE
 kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' --no-headers | grep -v 'NotReady' | wc -l
 EOF
 )

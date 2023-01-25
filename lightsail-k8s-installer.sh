@@ -383,6 +383,16 @@ EOF
   }
   
   lk8s_log "Stack '${LK8S_CLOUDFORMATION_STACKNAME}' is not exists, good!"
+  
+  # Validating template
+  ( lk8s_cf_template_header && \
+    lk8s_cf_template_control_plane_nodes && \
+    lk8s_cf_template_worker_nodes && \
+    lk8s_cf_template_load_balancer_worker_nodes ) | \
+    aws cloudformation validate-template --template-body file:///dev/stdin >> $LK8S_LOG_FILE 2>&1 || {
+      lk8s_err "CloudFormation generated template is not valid. Aborted!"
+      return 1
+    }
 
   ( lk8s_cf_template_header && \
   lk8s_cf_template_control_plane_nodes && \
@@ -399,7 +409,7 @@ EOF
   do
     lk8s_log_waiting "Waiting stack '$LK8S_CLOUDFORMATION_STACKNAME' to be ready$( lk8s_char_repeat '.' $_WAIT_COUNTER )"
     STACK_STATUS="$( aws cloudformation describe-stacks \
-                    --stack-name="$LK8S_CLOUDFORMATION_STACKNAME" | \
+                    --stack-name="$LK8S_CLOUDFORMATION_STACKNAME" >> $LK8S_LOG_FILE 2>>$LK8S_LOG_FILE | \
                     jq -r '.Stacks[0].StackStatus' )"
 
     [ $_WAIT_COUNTER -ge 3 ] && _WAIT_COUNTER=0

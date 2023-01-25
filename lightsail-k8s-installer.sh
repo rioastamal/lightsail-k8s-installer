@@ -18,7 +18,6 @@ LK8S_VERSION="1.0"
 [ -z "$LK8S_WORKER_LOAD_BALANCER_PREFIX" ] && LK8S_WORKER_LOAD_BALANCER_PREFIX="kube-worker-lb"
 [ -z "$LK8S_POD_NETWORK_CIDR" ] && LK8S_POD_NETWORK_CIDR="10.244.0.0/16"
 [ -z "$LK8S_NUMBER_OF_WORKER_NODES" ] && LK8S_NUMBER_OF_WORKER_NODES=2
-[ -z "$LK8S_SSH_PUBLIC_KEY_FILE" ] && LK8S_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_rsa.pub"
 [ -z "$LK8S_SSH_PRIVATE_KEY_FILE" ] && LK8S_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/id_rsa"
 [ -z "$LK8S_FIREWALL_SSH_ALLOW_CIDR" ] && LK8S_FIREWALL_SSH_ALLOW_CIDR="0.0.0.0/0"
 [ -z "$LK8S_DRY_RUN" ] && LK8S_DRY_RUN="no"
@@ -37,44 +36,6 @@ LK8S_REQUIRED_TOOLS="awk aws cat cut date sed ssh tr wc"
 # Only amazon_linux_2 is supported at the moment.
 LK8S_CP_OS_ID="amazon_linux_2"
 LK8S_WORKER_OS_ID="amazon_linux_2"
-
-# Default user data for instance initialization
-LK8S_NODE_USER_DATA=$( cat << 'EOF'
-        #!/bin/sh
-        
-        ## Disable SELinux
-        sudo setenforce 0
-        sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
-        
-        ## Add Kubernetes repo
-        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
-        [kubernetes]
-        name=Kubernetes
-        baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
-        enabled=1
-        gpgcheck=1
-        gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-        exclude=kubelet kubeadm kubectl
-        EOF
-        
-        ## Install Kubernetes Tools and Docker
-        sudo yum install -y docker kubelet kubeadm kubectl tc jq --disableexcludes=kubernetes
-        sudo systemctl enable --now docker
-        sudo systemctl enable --now kubelet
-        
-        ## Modify networking and Swappiness
-        cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
-        net.bridge.bridge-nf-call-ip6tables = 1
-        net.bridge.bridge-nf-call-iptables = 1
-        vm.swappiness = 0
-        EOF
-        
-        sudo sysctl --system
-EOF
-        cat << EOF
-        echo '$( cat $LK8S_SSH_PUBLIC_KEY_FILE )' >> /home/ec2-user/.ssh/authorized_keys
-EOF
-)
 
 # Function to show the help message
 lk8s_help()
@@ -141,7 +102,7 @@ lk8s_init()
 
   local _MISSING_TOOL=$( lk8s_missing_tool )
   [ ! -z "$_MISSING_TOOL" ] && {
-    echo "Missing tool: ${_MISSING_TOOL}. Make sure it is installed and available in your PATH." 2>&2
+    echo "Missing tool: ${_MISSING_TOOL}. Make sure it is installed and available in your PATH." >&2
     return 1
   }
 
@@ -173,6 +134,20 @@ lk8s_init()
   
   local _LOG_SUFFIX="$( date +"%Y%m%d%H%M%S" )"
   LK8S_LOG_FILE="${LK8S_OUTPUT_DIR}/${LK8S_REGION}-${LK8S_CLOUDFORMATION_STACKNAME}-${_LOG_SUFFIX}.log"
+  
+  [ ! -r "$LK8S_SSH_PRIVATE_KEY_FILE" ] && {
+    echo "Missing SSH private key file, make sure it is exists and readble." >&2
+    return 1
+  }
+  
+  [ -z "$LK8S_SSH_PUBLIC_KEY_FILE" ] && {
+    LK8S_SSH_PUBLIC_KEY_FILE="${LK8S_SSH_PRIVATE_KEY_FILE}.pub"
+  }
+  
+  [ ! -r "$LK8S_SSH_PUBLIC_KEY_FILE" ] && {
+    echo "Missing SSH public key file, make sure it is exists and readble." >&2
+    return 1
+  }
 
   return 0
 }
@@ -187,6 +162,54 @@ lk8s_char_repeat()
   done
 }
 
+lk8s_cp_node_user_data()
+{
+  # Indendation is important here since it will used inside YAML
+  cat << 'EOF'
+        #!/bin/sh
+        
+        ## Disable SELinux
+        sudo setenforce 0
+        sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+        
+        ## Add Kubernetes repo
+        cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
+        enabled=1
+        gpgcheck=1
+        gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        exclude=kubelet kubeadm kubectl
+        EOF
+        
+        ## Install Kubernetes Tools and Docker
+        sudo yum install -y docker kubelet kubeadm kubectl tc jq --disableexcludes=kubernetes
+        sudo systemctl enable --now docker
+        sudo systemctl enable --now kubelet
+        
+        ## Modify networking and Swappiness
+        cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+        net.bridge.bridge-nf-call-ip6tables = 1
+        net.bridge.bridge-nf-call-iptables = 1
+        vm.swappiness = 0
+        EOF
+        
+        sudo sysctl --system
+EOF
+        cat << EOF
+        echo '$( cat $LK8S_SSH_PUBLIC_KEY_FILE )' >> /home/ec2-user/.ssh/authorized_keys
+EOF
+  return 0
+}
+
+lk8s_worker_node_user_data()
+{
+  lk8s_cp_node_user_data
+  
+  return 0
+}
+
 lk8s_ssh_to_node()
 {
   local _NODE_IP=$1
@@ -194,7 +217,8 @@ lk8s_ssh_to_node()
   # Remove the $1
   shift
   
-  ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o LogLevel=error \
+  ssh -i $LK8S_SSH_PRIVATE_KEY_FILE -o ConnectTimeout=3 \
+    -o StrictHostKeyChecking=no -o LogLevel=error \
     ec2-user@$_NODE_IP $@
 }
 
@@ -247,7 +271,7 @@ lk8s_cf_template_control_plane_nodes()
         - Key: node-type
           Value: control-plane
       UserData: |
-$LK8S_NODE_USER_DATA
+$( lk8s_cp_node_user_data )
 EOF
   done
   
@@ -288,7 +312,7 @@ lk8s_cf_template_worker_nodes()
           Value: worker
 
       UserData: |
-$LK8S_NODE_USER_DATA
+$( lk8s_worker_node_user_data )
 EOF
   done
   
@@ -409,7 +433,7 @@ EOF
   do
     lk8s_log_waiting "Waiting stack '$LK8S_CLOUDFORMATION_STACKNAME' to be ready$( lk8s_char_repeat '.' $_WAIT_COUNTER )"
     STACK_STATUS="$( aws cloudformation describe-stacks \
-                    --stack-name="$LK8S_CLOUDFORMATION_STACKNAME" >> $LK8S_LOG_FILE 2>>$LK8S_LOG_FILE | \
+                    --stack-name="$LK8S_CLOUDFORMATION_STACKNAME" 2>>$LK8S_LOG_FILE | \
                     jq -r '.Stacks[0].StackStatus' )"
 
     [ $_WAIT_COUNTER -ge 3 ] && _WAIT_COUNTER=0

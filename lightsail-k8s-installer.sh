@@ -51,9 +51,9 @@ Where OPTIONS:
   -i ID         specify installation id using ID
   -m            dry run mode, print CloudFormation template and exit
   -r REGION     specify region using REGION
-  -w NUM        specify number of worker nodes using NUM
   -v            print script version
-  
+  -w NUM        specify number of worker nodes using NUM
+
 ----------------------- lightsail-k8s-installer -----------------------
 
 lightsail-k8s-installer is a command line interface to bootstrap Kubernetes 
@@ -146,6 +146,11 @@ lk8s_init()
   
   [ ! -r "$LK8S_SSH_PUBLIC_KEY_FILE" ] && {
     echo "Missing SSH public key file, make sure it is exists and readble." >&2
+    return 1
+  }
+  
+  [ $LK8S_NUMBER_OF_WORKER_NODES -lt 2 ] && {
+    echo "Number of worker nodes must be >= 2." >&2
     return 1
   }
 

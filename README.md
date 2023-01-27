@@ -38,6 +38,7 @@ Navigate:
     - [How to delete sample app?](#how-to-delete-sample-app)
     - [The installation is stuck, what should I do?](#the-installation-is-stuck-what-should-i-do)
     - [Is it safe to delete installation via CloudFormation console?](#is-it-safe-to-delete-installation-via-cloudformation-console)
+    - [How do I skip SSH passphrase?](#how-do-i-skip-ssh-passphrase)
   - [Todo](#todo)
   - [Contributing](#contributing)
   - [License](#license)

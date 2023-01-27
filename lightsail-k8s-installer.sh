@@ -901,7 +901,12 @@ spec:
       - name: http-echo
         image: hashicorp/http-echo
         args: 
-          - "-text=Node: \$(MY_NODE_NAME)/\$(MY_HOST_IP) - Pod: \$(MY_POD_NAME)/\$(MY_POD_IP)"
+          - |-
+            -text=Node: \$(MY_NODE_NAME)
+              IP: \$(MY_HOST_IP)
+            --
+             Pod: \$(MY_POD_NAME)
+              IP: \$(MY_POD_IP)
           - "-listen=:80"
         ports:
           - containerPort: 80

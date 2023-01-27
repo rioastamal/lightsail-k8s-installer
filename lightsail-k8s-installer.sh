@@ -54,7 +54,7 @@ Where OPTIONS:
   -r REGION     specify region using REGION
   -v            print script version
   -w NUM        specify number of worker nodes using NUM
-  -u            update the cluster by add new worker nodes
+  -u            update the cluster by adding new worker nodes
 
 ----------------------- lightsail-k8s-installer -----------------------
 
@@ -494,12 +494,16 @@ EOF
   echo "  tail -f $LK8S_LOG_FILE"
   echo
   
+  lk8s_log "Checking region validity"
   lk8s_is_region_and_az_valid || return 1
+  
+  lk8s_log "Checking SSH key pair '$LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME' in region '$LK8S_REGION'"
+  lk8s_is_ssh_keypair_valid || return 1
 
   lk8s_log "Checking existing stack '${LK8S_CLOUDFORMATION_STACKNAME}'"
   # Do not create when the stack already exists
   aws cloudformation describe-stacks --stack-name=$LK8S_CLOUDFORMATION_STACKNAME >>$LK8S_LOG_FILE 2>&1 && {
-    lk8s_log "Stack already exists. Aborted!"
+    lk8s_err "Stack already exists. Aborted!"
     return 1
   }
   
@@ -584,6 +588,15 @@ lk8s_update_cloudformation()
     return 1
   }
 
+  lk8s_log_waiting "Checking region validity" >&2
+  lk8s_is_region_and_az_valid || return 1
+
+  lk8s_log_waiting "Checking existing stack '$LK8S_CLOUDFORMATION_STACKNAME'" >&2
+  aws cloudformation describe-stacks --stack-name=$LK8S_CLOUDFORMATION_STACKNAME >>$LK8S_LOG_FILE 2>&1 || {
+    lk8s_err "Stack not exists. Aborted!"
+    return 1
+  }
+
   local _ANSWER="no"
   local _TITLE="lightsail-k8s-installer v${LK8S_VERSION}"
   local _ANY_KEY=""
@@ -605,10 +618,11 @@ $_WORKER_TEMPLATE
 "
   
   [ "$LK8S_DRY_RUN" = "yes" ] && {
-    lk8s_is_region_and_az_valid || return 1
     echo "$_NEW_CF_TEMPLATE"
     return 0
   }
+  
+  echo -en "\r\033[2K" >&2
   
   lk8s_char_repeat "-" $( echo $_TITLE | wc -c ) && echo
   echo $_TITLE
@@ -619,7 +633,7 @@ This process will update your Kubernetes cluster on Amazon Lightsail.
 CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
               Region: $LK8S_REGION
      AZs worker pool: $LK8S_AZ_POOL
-       New resources: $LK8S_NUMBER_OF_WORKER_NODES worker nodes (plan: \$${_WORKER_PRICE})
+       New resources: $LK8S_NUMBER_OF_WORKER_NODES worker node(s) (plan: \$${_WORKER_PRICE})
 EOF
 
   echo
@@ -629,14 +643,8 @@ EOF
   echo "  tail -f $LK8S_LOG_FILE"
   echo
   
-  lk8s_is_region_and_az_valid || return 1
-  
-  lk8s_log "Checking existing stack '${LK8S_CLOUDFORMATION_STACKNAME}'"
-  # Do not create when the stack already exists
-  aws cloudformation describe-stacks --stack-name=$LK8S_CLOUDFORMATION_STACKNAME >>$LK8S_LOG_FILE 2>&1 || {
-    lk8s_log "Stack not exists. Aborted!"
-    return 1
-  }
+  lk8s_log "Checking SSH key pair '$LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME' in region '$LK8S_REGION'"
+  lk8s_is_ssh_keypair_valid || return 1
   
   # Apply change set
   local _NOW="$( date +"%Y%m%d%H%M%S" )"
@@ -1277,6 +1285,16 @@ lk8s_missing_tool()
   done
   
   echo ""
+  return 0
+}
+
+lk8s_is_ssh_keypair_valid()
+{
+  aws lightsail get-key-pair --key-pair-name $LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME >/dev/null 2>/dev/null || {
+    lk8s_err "Can not find SSH key pair '$LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME' in region $LK8S_REGION"
+    return 1
+  }
+  
   return 0
 }
 

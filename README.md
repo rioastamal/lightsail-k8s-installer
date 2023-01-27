@@ -26,16 +26,19 @@ Navigate:
     - [Custom CIDR for Pod network](#custom-cidr-for-pod-network)
     - [Lightsail instance plan](#lightsail-instance-plan)
     - [Dry run mode](#dry-run-mode)
+    - [Add new worker node](#add-new-worker-node)
     - [Environment variables](#environment-variables)
   - [FAQ](#faq)
     - [What OS is used in all nodes?](#what-os-is-used-in-all-nodes)
     - [What network Pod add-on is used?](#what-network-pod-add-on-is-used)
     - [Is high availability control plane cluster supported?](#is-high-availability-control-plane-cluster-supported)
     - [How worker node is placed on each AZ?](#how-worker-node-is-placed-on-each-az)
+    - [How to delete worker node?](#how-to-delete-worker-node)
     - [How sample app is configured?](#how-sample-app-is-configured)
     - [How to delete sample app?](#how-to-delete-sample-app)
     - [The installation is stuck, what should I do?](#the-installation-is-stuck-what-should-i-do)
     - [Is it safe to delete installation via CloudFormation console?](#is-it-safe-to-delete-installation-via-cloudformation-console)
+  - [Todo](#todo)
   - [Contributing](#contributing)
   - [License](#license)
 ## Requirements
@@ -43,9 +46,10 @@ Navigate:
 Things you need to run this script:
 
 - Active AWS account and make sure it has permissions to create Lightsail and CloudFormation resources.
-- AWS CLI v2
+- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - SSH client
 - Basic shell utilities such as `awk`, `cat`, `cut`, `date`, `sed`, `tr`, `wc`.
+- [jq](https://stedolan.github.io/jq/)
 
 lightsail-k8s-installer has been tested using Bash v4.2 but it should work for other shells.
 
@@ -78,9 +82,10 @@ Where OPTIONS:
   -i ID         specify installation id using ID
   -m            dry run mode, print CloudFormation template and exit
   -r REGION     specify region using REGION
-  -w NUM        specify number of worker nodes using NUM
   -v            print script version
-  
+  -w NUM        specify number of worker nodes using NUM
+  -u            update the cluster by add new worker nodes
+
 ----------------------- lightsail-k8s-installer -----------------------
 
 lightsail-k8s-installer is a command line interface to bootstrap Kubernetes 
@@ -184,6 +189,15 @@ sh lightsail-k8s-installer.sh -i demo -r ap-southeast-1 -m
 
 The dry run mode does not shows what commands that are going to be run on each nodes.
 
+### Add new worker node
+
+To add new worker simply use `-u` options. Following example will add 3 worker nodes ($10 plan) to the cluster. The workers will be placed sequentially on `ap-southeast-1b` and `ap-southeast-1c` only.
+
+```sh
+LK8S_WORKER_PLAN=10_usd \
+sh lightsail-k8s-installer.sh -i demo -u -w 3 -a "ap-southeast-1b ap-southeast-1c"
+```
+
 ### Environment variables
 
 All configuration for lightsail-k8s-installer are taken from environment variables. Here is a list of environment variables you can change.
@@ -196,7 +210,7 @@ LK8S_WORKER_NODE_PREFIX | kube-worker | |
 LK8S_WORKER_LOAD_BALANCER_PREFIX | kube-worker-lb | |
 LK8S_POD_NETWORK_CIDR | 10.244.0.0/16 | |
 LK8S_NUMBER_OF_WORKER_NODES | 2 | |
-LK8S_SSH_PUBLIC_KEY_FILE | $HOME/.ssh/id_rsa.pub | Injected to each node
+LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME | id_rsa | Key pair is per region
 LK8S_SSH_PRIVATE_KEY_FILE | $HOME/.ssh/id_rsa | |
 LK8S_FIREWALL_SSH_ALLOW_CIDR | 0.0.0.0/0 | Allow from everywhere
 LK8S_DRY_RUN | no | |
@@ -230,6 +244,12 @@ Worker node 3 | us-east-1a
 Worker node 4 | us-east-1b
 Worker Node 5 | us-east-1a
 
+### How to delete worker node?
+
+There is no such functionality at the moment. It's still on the roadmap.
+
+If you want to delete worker node you need to do it manually.
+
 ### How sample app is configured?
 
 The sample app uses [hashicorp/http-echo](https://hub.docker.com/r/hashicorp/http-echo/) image which run on port 80. The installation script automatically adds a new label, `node=[NODE_NAME]` to each pod that has the label `action=auto-label-node`.
@@ -247,6 +267,10 @@ kubectl get services,deployments --no-headers -o name \
   -l cfstackname=[CLOUDFORMATION_STACKNAME] | xargs kubectl delete
 ```
 
+### Why output of sample app always the same?
+
+Some browsers like Chrome use aggressive caching. I suggest to use command line tool such as cURL to do the testing.
+
 ### The installation is stuck, what should I do?
 
 See the log file at `.out/[REGION]-[CLOUDFORMATION_STACK_NAME]-[TIME].log`. If you did not find the issue then open CloudFormation console. Most of the time this is caused by CloudFormation failed to create a resource such as failed to create Amazon Lightsail Instance due permission issue or you do not have enough quota.
@@ -254,6 +278,13 @@ See the log file at `.out/[REGION]-[CLOUDFORMATION_STACK_NAME]-[TIME].log`. If y
 ### Is it safe to delete installation via CloudFormation console?
 
 Yes it is totally safe. It will destroy all resources created by lightsail-k8s-installer.
+
+## Todo
+
+- [ ] High availability control plane cluster
+- [ ] Ability to delete worker node
+- [ ] Kubernetes dashboard
+- [ ] Custom tags for node
 
 ## Contributing
 

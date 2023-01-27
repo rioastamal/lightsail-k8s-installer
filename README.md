@@ -279,6 +279,17 @@ See the log file at `.out/[REGION]-[CLOUDFORMATION_STACK_NAME]-[TIME].log`. If y
 
 Yes it is totally safe. It will destroy all resources created by lightsail-k8s-installer.
 
+### How do I skip SSH passphrase?
+
+lightsail-k8s-installer uses SSH to connect to node in Kubernetes to perform tasks. If your SSH key having a passphrase it my quite annoying to enter the passphrase multiple times during installation process.
+
+One of the solution is by using [ssh-agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent) and ssh-add. Before running the installation, issue command below.
+
+```sh
+eval $( ssh-agent )
+ssh-add /path/to/your/ssh-private.key
+```
+
 ## Todo
 
 - [ ] High availability control plane cluster

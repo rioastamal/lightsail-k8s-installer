@@ -16,6 +16,19 @@ sh lightsail-k8s-installer.sh -d demo
 
 You can also use CloudFormation console or AWS CLI to delete the stack.
 
+<details>
+  <summary>Screenshots</summary>
+  
+![00-install](https://user-images.githubusercontent.com/469847/215003520-2c773a30-28fe-4972-84f8-dc477da1db21.jpg)
+
+![01-install](https://user-images.githubusercontent.com/469847/215003614-1853e38a-7b81-4dd0-925c-b9539f8dd5f6.jpg)
+
+![02-lightsail-instances](https://user-images.githubusercontent.com/469847/215003750-25f7dea7-1778-40d8-837a-6fb4fccbd456.jpg)
+
+![03-lightsail-lb](https://user-images.githubusercontent.com/469847/215003891-2b1df05e-659a-4da1-910f-5f55f4bca67a.jpg)
+
+</details>
+
 Navigate:
 
  - [Requirements](#requirements)

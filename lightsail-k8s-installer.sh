@@ -31,7 +31,7 @@ LK8S_VERSION="1.0"
 LK8S_NUMBER_OF_CP_NODES=1
 
 # Required tools to perform tasks
-LK8S_REQUIRED_TOOLS="awk aws cat cut date sed ssh tr wc"
+LK8S_REQUIRED_TOOLS="awk aws cat cut date jq sed ssh tr wc"
 
 # See all available OS/Blueprint ID using: `aws lightsail get-blueprints`
 # Only amazon_linux_2 is supported at the moment.

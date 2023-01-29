@@ -5,7 +5,7 @@
 
 readonly LK8S_SCRIPT_NAME=$( basename "$0" )
 LK8S_BASEDIR=$( cd -P -- "$( dirname "$0" )" && pwd -P )
-LK8S_VERSION="1.0"
+LK8S_VERSION="1.1"
 LC_CTYPE="C"
 
 # Path to directory to store application outputs

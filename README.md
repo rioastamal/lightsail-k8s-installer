@@ -53,6 +53,7 @@ Navigate:
     - [Is it safe to delete installation via CloudFormation console?](#is-it-safe-to-delete-installation-via-cloudformation-console)
     - [How do I skip SSH passphrase?](#how-do-i-skip-ssh-passphrase)
   - [Todo](#todo)
+  - [Changelog](#changelog)
   - [Contributing](#contributing)
   - [License](#license)
 ## Requirements
@@ -65,7 +66,13 @@ Things you need to run this script:
 - Basic shell utilities such as `awk`, `cat`, `cut`, `date`, `sed`, `tr`, `wc`.
 - [jq](https://stedolan.github.io/jq/)
 
-lightsail-k8s-installer has been tested using Bash v4.2 but it should work for other shells.
+lightsail-k8s-installer has been tested using following shells.
+
+- bash v4.2 (Linux)
+- bash v5.2 (Windows via Git Bash)
+- dash v0.5 (Linux)
+- zsh v5.8 (Linux)
+- zsh v5.9 (macOS)
 
 ## Installation
 
@@ -310,6 +317,26 @@ ssh-add /path/to/your/ssh-private.key
 - [ ] Ability to delete worker node
 - [ ] Kubernetes dashboard
 - [ ] Custom tags for node
+- [ ] Options provide a container image and it's configuration
+- [ ] Ability to choose OS for node
+
+## Changelog
+
+#### v1.1 (2023-01-29)
+
+- Bug fixes: 
+  - Missing jq from the required tools
+  - Wrong Lightsail SSH key pair name
+  - Failed kubectl settings on control plane because of wrong interpretation of `$HOME`
+- Improvements: 
+  - Add compatibility with dash shell
+  - Add compatibility with zsh shell
+  - Replace GNU's `head` with standard `head`
+- Support for Windows (Git Bash)
+
+#### v1.0 (2023-01-27)
+
+- Initial public release
 
 ## Contributing
 

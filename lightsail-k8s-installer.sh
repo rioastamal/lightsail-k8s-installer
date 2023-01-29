@@ -139,16 +139,8 @@ lk8s_init()
   LK8S_LOG_FILE="${LK8S_OUTPUT_DIR}/${LK8S_REGION}-${LK8S_CLOUDFORMATION_STACKNAME}-${_LOG_SUFFIX}.log"
   
   [ ! -r "$LK8S_SSH_PRIVATE_KEY_FILE" ] && {
-    echo "Missing SSH private key file, make sure it is exists and readble." >&2
-    return 1
-  }
-  
-  [ -z "$LK8S_SSH_PUBLIC_KEY_FILE" ] && {
-    LK8S_SSH_PUBLIC_KEY_FILE="${LK8S_SSH_PRIVATE_KEY_FILE}.pub"
-  }
-  
-  [ ! -r "$LK8S_SSH_PUBLIC_KEY_FILE" ] && {
-    echo "Missing SSH public key file, make sure it is exists and readble." >&2
+    printf "Missing SSH private key file: %s.\n" "$LK8S_SSH_PRIVATE_KEY_FILE" 2>&1
+    printf "Make sure it is exists and readble. You can set the location via LK8S_SSH_PRIVATE_KEY_FILE environment variable." 2>&1
     return 1
   }
   
@@ -515,6 +507,8 @@ EOF
   lk8s_log "Stack '${LK8S_CLOUDFORMATION_STACKNAME}' is not exists, good!"
   
   # Validating template
+  local _TEMPLATE_OUT_FILE="$LK8S_OUTPUT_DIR/${LK8S_CLOUDFORMATION_STACKNAME}.yaml"
+  _TEMPLATE_OUT_FILE="$( lk8s_transform_to_windows_path "$_TEMPLATE_OUT_FILE" )"
   ( lk8s_cf_template_header && \
     lk8s_cf_template_nodes \
       --node-az-pool "$LK8S_AZ_POOL" \
@@ -528,8 +522,9 @@ EOF
       --random-ids "$LK8S_WORKER_NODE_RANDOM_IDS" \
       --node-prefix "$LK8S_WORKER_NODE_PREFIX" \
       --node-type "worker" && \
-    lk8s_cf_template_load_balancer_worker_nodes ) | \
-    aws cloudformation validate-template --template-body file:///dev/stdin >> $LK8S_LOG_FILE 2>&1 || {
+    lk8s_cf_template_load_balancer_worker_nodes ) > $_TEMPLATE_OUT_FILE && \
+    aws cloudformation validate-template \
+      --template-body file://$_TEMPLATE_OUT_FILE >> $LK8S_LOG_FILE 2>&1 || {
       lk8s_err "CloudFormation generated template is not valid. Aborted!"
       return 1
     }
@@ -550,7 +545,7 @@ EOF
   lk8s_cf_template_load_balancer_worker_nodes ) | \
   aws cloudformation create-stack \
     --stack-name="$LK8S_CLOUDFORMATION_STACKNAME" \
-    --template-body file:///dev/stdin >> $LK8S_LOG_FILE 2>&1
+    --template-body file://$_TEMPLATE_OUT_FILE >> $LK8S_LOG_FILE 2>&1
 
   local STACK_STATUS=""
   local _WAIT_COUNTER=1
@@ -661,11 +656,15 @@ EOF
   # Apply change set
   local _NOW="$( date +"%Y%m%d%H%M%S" )"
   local _CHANGE_SET_NAME=$LK8S_WORKER_NODE_PREFIX-$_NOW
+  local _NEW_CF_TEMPLATE_FILE=$LK8S_OUTPUT_DIR/${LK8S_CLOUDFORMATION_STACKNAME}-update.yaml
+  _NEW_CF_TEMPLATE_FILE="$( lk8s_transform_to_windows_path "$_NEW_CF_TEMPLATE_FILE" )"
+  
   lk8s_log "Creating CloudFormation change set '$_CHANGE_SET_NAME' for new worker node(s)"
-  echo "$_NEW_CF_TEMPLATE" | aws cloudformation create-change-set \
+  echo "$_NEW_CF_TEMPLATE" > "$_NEW_CF_TEMPLATE_FILE"
+  aws cloudformation create-change-set \
     --stack-name $LK8S_CLOUDFORMATION_STACKNAME \
     --change-set-name $_CHANGE_SET_NAME \
-    --template-body file:///dev/stdin >>$LK8S_LOG_FILE 2>&1 || {
+    --template-body file://$_NEW_CF_TEMPLATE_FILE >>$LK8S_LOG_FILE 2>&1 || {
       lk8s_err "Failed to creating change set '$_CHANGE_SET_NAME'"
       return 1
     }
@@ -1194,6 +1193,7 @@ lk8s_is_region_valid()
   
   for region in $( echo "$_REGIONS" )
   do
+    region="$( echo $region | tr -d '[:space:]' )"
     [ "$region" = "$_REGION_NAME" ] && {
       _VALID="true"
       break
@@ -1224,8 +1224,10 @@ lk8s_is_az_valid()
   
   for our_az in $( echo "$_AZ" )
   do
+    our_az="$( echo $our_az | tr -d '[:space:]' )"
     for their_az in $( echo "$_AZ_LIST" )
     do
+      their_az="$( echo $their_az | tr -d '[:space:]' )"
       [ "$our_az" = "$their_az" ] && _VALID=$(( $_VALID + 1 ))
     done
   done
@@ -1322,6 +1324,51 @@ lk8s_is_ssh_keypair_valid()
   return 0
 }
 
+lk8s_is_windows_os()
+{
+  case "$( uname -sr )" in
+    CYGWIN*|MINGW*|MINGW32*|MSYS*)
+      printf "windows"
+    ;;
+    
+    *)
+      printf "non_windows"
+    ;;
+  esac
+}
+
+lk8s_transform_to_windows_path()
+{
+  local _FILE_PATH="$1"
+  local _OS="$( lk8s_is_windows_os )"
+  
+  [ "$_OS" = "non_windows" ] && {
+    printf "$_FILE_PATH"
+    return 0
+  }
+  
+  local _FIRST_CHAR_OF_PATH="$( echo "$_FILE_PATH" | cut -c1 )"
+  
+  # if path is not begin with '/' no need to continue since it is 
+  # an relative path. No need to add Windows X:/ drive
+  [ "$_FIRST_CHAR_OF_PATH" != "/" ] && {
+    echo "$_FILE_PATH"
+    return 0
+  }
+
+  local _DRIVE_NAME="$( echo "$_FILE_PATH" | awk -F'/' '{print $2}' )"
+  local _PATH_WITHOUT_DRIVE="$( echo "$_FILE_PATH" | awk -F'/' '{
+      for (i=3; i<=NF; i++)
+      {
+        printf "/%s",$i
+      }
+    }'
+  )"
+  
+  printf "%s:%s" "$_DRIVE_NAME" "$_PATH_WITHOUT_DRIVE"
+  return 0
+}
+
 # Default action
 LK8S_ACTION="install"
 
@@ -1379,7 +1426,7 @@ do
     esac
 done
 
-case $LK8S_ACTION in
+case "$LK8S_ACTION" in
   install)
     lk8s_init && \
     lk8s_run_cloudformation

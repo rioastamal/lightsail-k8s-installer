@@ -302,7 +302,7 @@ Yes it is totally safe. It will destroy all resources created by lightsail-k8s-i
 
 ### How do I skip SSH passphrase?
 
-lightsail-k8s-installer uses SSH to connect to node in Kubernetes to perform tasks. If your SSH key having a passphrase it my quite annoying to enter the passphrase multiple times during installation process.
+lightsail-k8s-installer uses SSH to connect to node in Kubernetes to perform tasks. If your SSH key having a passphrase it may quite annoying to enter the passphrase multiple times during installation process.
 
 One of the solution is by using [ssh-agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent) and ssh-add. Before running the installation, issue command below.
 

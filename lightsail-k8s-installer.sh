@@ -4,8 +4,9 @@
 # @desc Script to automate Kubernetes installation on Amazon Lightsail instances
 
 readonly LK8S_SCRIPT_NAME=$( basename "$0" )
-LK8S_BASEDIR=$( realpath "$( dirname "$0" )" )
+LK8S_BASEDIR=$( cd -P -- "$( dirname "$0" )" && pwd -P )
 LK8S_VERSION="1.0"
+LC_CTYPE="C"
 
 # Path to directory to store application outputs
 [ ! -d "$LK8S_OUTPUT_DIR/.out" ] && LK8S_OUTPUT_DIR="$LK8S_BASEDIR/.out"
@@ -68,7 +69,7 @@ homepage at http://github.com/rioastamal/lightsail-k8s-installer."
 lk8s_write_log()
 {
     _LOG_MESSAGE="$@"
-    _SYSLOG_DATE_STYLE=$( date +"%b %e %H:%M:%S" )
+    _SYSLOG_DATE_STYLE="$( date +"%b %e %H:%M:%S" )"
 
     # Date Hostname AppName[PID]: MESSAGE
     printf "[%s LK8S]: %s\n" \
@@ -78,13 +79,13 @@ lk8s_write_log()
 
 lk8s_log()
 {
-    [ "$LK8S_DEBUG" = "true" ] && echo "[LK8S]: $@"
+    [ "$LK8S_DEBUG" = "true" ] && printf "[LK8S]: %s\n" "$@"
     lk8s_write_log "$@"
 }
 
 lk8s_log_waiting()
 {
-    [ "$LK8S_DEBUG" = "true" ] && echo -en "\r[LK8S]: $@\033[K"
+    [ "$LK8S_DEBUG" = "true" ] && printf "\r[LK8S]: %s\033[K" "$@"
     lk8s_write_log "$@"
 }
 
@@ -102,7 +103,7 @@ lk8s_init()
     return 1
   }
 
-  local _MISSING_TOOL=$( lk8s_missing_tool )
+  local _MISSING_TOOL="$( lk8s_missing_tool )"
   [ ! -z "$_MISSING_TOOL" ] && {
     echo "Missing tool: ${_MISSING_TOOL}. Make sure it is installed and available in your PATH." >&2
     return 1
@@ -182,7 +183,7 @@ lk8s_char_repeat()
   # $2 -> number of repeat
   for i in $( seq 1 $2 )
   do
-    echo -n $1
+    printf "%s" "$1"
   done
 }
 
@@ -316,7 +317,7 @@ lk8s_cf_template_node()
   
   [ -z "$_KEYPAIR_NAME" ] && _KEYPAIR_NAME=$LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME
   [ "$_NODE_TYPE" = "worker" ] && {
-    local _NETWORKING_RULES=$(cat <<EOF
+    local _NETWORKING_RULES="$(cat <<EOF
           Ports:
             - Protocol: tcp
               FromPort: 22
@@ -339,11 +340,11 @@ lk8s_cf_template_node()
               Cidrs:
                 - 172.26.0.0/16
 EOF
-)
+)"
   }
   
   [ "$_NODE_TYPE" = "control-plane" ] && {
-    local _NETWORKING_RULES=$( cat <<EOF
+    local _NETWORKING_RULES="$( cat <<EOF
           Ports:
             - Protocol: tcp
               FromPort: 22
@@ -376,7 +377,7 @@ EOF
               Cidrs:
                 - 172.26.0.0/16
 EOF
-)
+)"
   }
 
   cat <<EOF
@@ -738,7 +739,7 @@ lk8s_run_post_command_control_plance_nodes()
     echo "$_INIT_SCRIPTS" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
 
     lk8s_log "Installing Kubernetes control plane on node '${_NODE_NAME}'"
-    local _KUBERNETES_INSTALL_CMD=$( cat <<EOF
+    local _KUBERNETES_INSTALL_CMD="$( cat <<EOF
 [ "\$( hostname )" != "$_NODE_NAME" ] && {
   sudo hostnamectl set-hostname $_NODE_NAME
 }
@@ -761,7 +762,7 @@ CP_NODE_STATUS="\$( kubectl get nodes --no-headers | awk '{print \$2}' )"
   sed 's#10.244.0.0/16#$LK8S_POD_NETWORK_CIDR#' | kubectl apply -f -
 }
 EOF
-)
+)"
     echo "$_KUBERNETES_INSTALL_CMD" >> $LK8S_LOG_FILE
     echo "$_KUBERNETES_INSTALL_CMD" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
   done
@@ -781,7 +782,7 @@ lk8s_run_post_command_worker_node()
   
   for i in $( seq 1 $LK8S_NUMBER_OF_WORKER_NODES )
   do
-    local _NODE_NAME="$LK8S_WORKER_NODE_PREFIX"-$( echo $LK8S_WORKER_NODE_RANDOM_IDS | awk "{print \$${i}}" )
+    local _NODE_NAME="$LK8S_WORKER_NODE_PREFIX"-"$( echo $LK8S_WORKER_NODE_RANDOM_IDS | awk "{print \$${i}}" )"
     lk8s_wait_for_node_to_be_ready $_NODE_NAME
     
     local _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )"
@@ -791,15 +792,15 @@ lk8s_run_post_command_worker_node()
     echo "$_INIT_SCRIPTS" >> $LK8S_LOG_FILE
     echo "$_INIT_SCRIPTS" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
     
-    local _JOIN_CMD=$( lk8s_gen_join_command --cp-node-name "$_CP_NODE_NAME" )
-    local _KUBERNETES_WORKER_CMD=$(cat <<EOF
+    local _JOIN_CMD="$( lk8s_gen_join_command --cp-node-name "$_CP_NODE_NAME" )"
+    local _KUBERNETES_WORKER_CMD="$(cat <<EOF
 [ "\$( hostname )" != "$_NODE_NAME" ] && {
   sudo hostnamectl set-hostname $_NODE_NAME
 }
 
 sudo $_JOIN_CMD
 EOF
-)
+)"
     lk8s_log "Joining worker node '$_NODE_NAME' to control plane"
     echo "$_KUBERNETES_WORKER_CMD" >> $LK8S_LOG_FILE
     echo "$_KUBERNETES_WORKER_CMD" | lk8s_ssh_to_node $_NODE_IP sudo -u ec2-user bash >> $LK8S_LOG_FILE 2>&1
@@ -832,7 +833,7 @@ lk8s_print_installation_info()
   local _LB_URL=$( aws lightsail get-load-balancer --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX | jq -r '.loadBalancer.dnsName' )
   local _KUBERNETES_INFO="$( lk8s_ssh_to_node $_CONTROL_PLANE_IP kubectl get nodes,services,deployments,pods )"
   local _BACKSLASH=$( printf '%b' '\134' ) # backslash
-  local _INFO=$( cat <<EOF
+  local _INFO="$( cat <<EOF
 Your Kubernetes installation info:
 $_KUBERNETES_INFO
 
@@ -850,7 +851,7 @@ To delete sample app run following on Control plane:
     -l cfstackname=$LK8S_CLOUDFORMATION_STACKNAME | xargs kubectl delete
 
 EOF
-)
+)"
   lk8s_log "$_INFO"
   echo
   lk8s_log "Installation COMPLETED."
@@ -877,7 +878,7 @@ lk8s_gen_join_command()
 lk8s_gen_sample_configuration_deployment()
 {
   local _NUMBER_OF_REPLICAS=$(( $LK8S_NUMBER_OF_WORKER_NODES * 2 ))
-  local _YAML_DEPLOYMENT=$( cat <<EOF
+  local _YAML_DEPLOYMENT="$( cat <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -927,9 +928,8 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: status.podIP
-
 EOF
-)
+)"
 
   local _YAML_SERVICES=""
   
@@ -937,7 +937,8 @@ EOF
   do
     local _NODE_NAME="$LK8S_WORKER_NODE_PREFIX"-$( echo $LK8S_WORKER_NODE_RANDOM_IDS | awk "{print \$${i}}" )
     local _NODE_PRIVATE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.privateIpAddress )"
-    local _TMP=$( cat <<EOF
+    local _TMP="$( cat <<EOF
+
 ---
 apiVersion: v1
 kind: Service
@@ -958,12 +959,15 @@ spec:
   externalIPs:
     - $_NODE_PRIVATE_IP
 EOF
-)
-    _YAML_SERVICES="${_YAML_SERVICES}\n${_TMP}"
+)"
+    _YAML_SERVICES="${_YAML_SERVICES}
+${_TMP}"
   done
   
-  echo -e "$_YAML_DEPLOYMENT"
-  echo -e "$_YAML_SERVICES"
+  printf "%s\n" "$_YAML_DEPLOYMENT"
+  printf "%s\n" "$_YAML_SERVICES"
+  
+  printf "Kubernetes YAML deployment\n%s\n\%s" "$_YAML_DEPLOYMENT" "$_YAML_SERVICES" >> $LK8S_LOG_FILE
   
   return 0
 }
@@ -1025,12 +1029,12 @@ lk8s_wait_for_sample_pods_to_be_ready()
   
   while [ $_NUMBER_OF_PODS_READY -lt $_NUMBER_OF_REPLICAS ]
   do
-    _NUMBER_OF_PODS_READY=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 2>> $LK8S_LOG_FILE
+    _NUMBER_OF_PODS_READY="$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 2>> $LK8S_LOG_FILE
 kubectl get pods --show-kind \
   -l 'action=auto-label-node' -l '!node' --no-headers -o wide \
   --field-selector=status.phase=Running 2>/dev/null | grep -v 'Terminating' | wc -l
 EOF
-)
+)"
 
     lk8s_log_waiting "Waiting sample pods ($_NUMBER_OF_PODS_READY/${_NUMBER_OF_REPLICAS}) to be ready$( lk8s_char_repeat '.' $_WAIT_COUNTER )"
     
@@ -1051,11 +1055,11 @@ lk8s_wait_for_kubelet_worker_to_be_ready()
   local _CONTROL_PLANE_IP=$1
   local _NUMBER_OF_KUBELET_WORKER_READY=0
   local _WAIT_COUNTER=1
-  local _NUMBER_OF_WORKER_NODES=$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 
+  local _NUMBER_OF_WORKER_NODES="$( cat <<EOF | lk8s_ssh_to_node $_CONTROL_PLANE_IP 
 kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' --no-headers | \
 grep $LK8S_CLOUDFORMATION_STACKNAME | wc -l
 EOF
-)
+)"
   
   lk8s_log_waiting "Waiting kubelet on worker ($_NUMBER_OF_KUBELET_WORKER_READY/${_NUMBER_OF_WORKER_NODES}) to be ready$( lk8s_char_repeat '.' $_WAIT_COUNTER )"
   
@@ -1091,7 +1095,7 @@ lk8s_wait_for_node_to_be_ready()
     # There is possibility public IP is changed when instance is stopped, so we
     # get the IP inside the loop
     _NODE_IP="$( aws lightsail get-instance --instance-name=$_NODE_NAME | jq -r .instance.publicIpAddress )"
-    _NODE_STATUS="$( lk8s_ssh_to_node $_NODE_IP whoami 2>/dev/null )"
+    _NODE_STATUS="$( lk8s_ssh_to_node $_NODE_IP whoami 2>>$LK8S_LOG_FILE | tr -d '[:space:]' )"
     lk8s_log_waiting "Waiting SSH connection to '$_NODE_NAME' to be ready$( lk8s_char_repeat '.' $_WAIT_COUNTER )"
     
     [ $_WAIT_COUNTER -ge 3 ] && _WAIT_COUNTER=0
@@ -1170,7 +1174,7 @@ lk8s_get_lightsail_regions()
 lk8s_is_region_valid()
 {
   local _REGION_NAME=$1
-  local _REGIONS=$( lk8s_get_lightsail_regions 2>/dev/null )
+  local _REGIONS="$( lk8s_get_lightsail_regions 2>/dev/null )"
   local _VALID="false"
   
   for region in $_REGIONS
@@ -1189,8 +1193,8 @@ lk8s_is_region_valid()
 lk8s_get_region_az()
 {
   local _REGION_NAME=$1
-  local _AZ=$( aws ec2 describe-availability-zones --region $_REGION_NAME | \
-    jq -r '.AvailabilityZones[].ZoneName' )
+  local _AZ="$( aws ec2 describe-availability-zones --region $_REGION_NAME | \
+    jq -r '.AvailabilityZones[].ZoneName' )"
   
   echo "$_AZ"
 }
@@ -1198,9 +1202,9 @@ lk8s_get_region_az()
 lk8s_is_az_valid()
 {
   local _REGION=$1
-  local _AZ=$2
+  local _AZ="$2"
   local _AZ_LIST="$( lk8s_get_region_az $_REGION )"
-  local _NUMBER_OF_AZ=$( echo "$_AZ" | wc -w )
+  local _NUMBER_OF_AZ=$( echo "$_AZ" | wc -w | tr -d ' ' )
   local _VALID=0
   
   for our_az in $_AZ

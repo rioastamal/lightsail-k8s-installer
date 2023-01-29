@@ -90,7 +90,7 @@ lk8s_log_waiting()
 }
 
 lk8s_err() {
-    echo "[LK8S ERROR]: $@" >&2
+    printf "[LK8S ERROR]: %s\n" "$@" >&2
     lk8s_write_log "$@"
 }
 
@@ -489,7 +489,8 @@ CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
 EOF
   
   echo
-  read -p "Press any key to continue: " _ANY_KEY
+  printf "Press any key to continue: "
+  read _ANY_KEY
   echo "This may take several minutes, please wait..."
   echo "To view detailed log, run following command on another terminal:"
   echo "  tail -f $LK8S_LOG_FILE"
@@ -603,17 +604,17 @@ lk8s_update_cloudformation()
   local _ANY_KEY=""
   local _WORKER_PRICE=$( lk8s_get_worker_plan_price )
   
-  local _CURRENT_CF_TEMPLATE=$( aws cloudformation get-template \
-    --stack-name "$LK8S_CLOUDFORMATION_STACKNAME" --output text | head -n -3)
+  local _CURRENT_CF_TEMPLATE="$( aws cloudformation get-template \
+    --stack-name "$LK8S_CLOUDFORMATION_STACKNAME" --output text | head -n -3)"
 
-  local _WORKER_TEMPLATE=$(
+  local _WORKER_TEMPLATE="$(
 lk8s_cf_template_nodes \
       --node-az-pool "$LK8S_AZ_POOL" \
       --number-of-nodes "$LK8S_NUMBER_OF_WORKER_NODES" \
       --random-ids "$LK8S_WORKER_NODE_RANDOM_IDS" \
       --node-prefix "$LK8S_WORKER_NODE_PREFIX" \
       --node-type "worker"
-)
+)"
   local _NEW_CF_TEMPLATE="$_CURRENT_CF_TEMPLATE
 $_WORKER_TEMPLATE
 "
@@ -638,7 +639,8 @@ CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
 EOF
 
   echo
-  read -p "Press any key to continue: " _ANY_KEY
+  printf "Press any key to continue: " 
+  read _ANY_KEY
   echo "This may take several minutes, please wait..."
   echo "To view detailed log, run following command on another terminal:"
   echo "  tail -f $LK8S_LOG_FILE"
@@ -812,16 +814,21 @@ EOF
 lk8s_attach_load_balancer_to_worker_node()
 {
   local _INSTANCE_NAMES=""
-  for i in $( seq $LK8S_NUMBER_OF_WORKER_NODES )
+  local _RANDOM_ID=""
+  for _RANDOM_ID in $( printf "$LK8S_WORKER_NODE_RANDOM_IDS" )
   do
-    local _NAME="$LK8S_WORKER_NODE_PREFIX"-$( echo $LK8S_WORKER_NODE_RANDOM_IDS | awk "{print \$${i}}" )
+    local _NAME="$LK8S_WORKER_NODE_PREFIX-$_RANDOM_ID"
     _INSTANCE_NAMES="$_INSTANCE_NAMES $_NAME"
   done
 
+  _INSTANCE_NAMES=$( printf "%s" "$_INSTANCE_NAMES" | awk '{$1=$1;print}' )
   lk8s_log "Attaching worker nodes to Lightsail Load Balancer"
-  aws lightsail attach-instances-to-load-balancer \
-    --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX \
-    --instance-names $_INSTANCE_NAMES >> $LK8S_LOG_FILE 2>&1
+  
+  local _ATTACH_CMD="$( printf "aws lightsail attach-instances-to-load-balancer \\
+    --load-balancer-name %s \\
+    --instance-names %s
+" "$LK8S_WORKER_LOAD_BALANCER_PREFIX" "$_INSTANCE_NAMES" )"
+  eval "$_ATTACH_CMD" >> $LK8S_LOG_FILE 2>&1
     
   return 0
 }
@@ -833,8 +840,8 @@ lk8s_print_installation_info()
   local _LB_URL=$( aws lightsail get-load-balancer --load-balancer-name $LK8S_WORKER_LOAD_BALANCER_PREFIX | jq -r '.loadBalancer.dnsName' )
   local _KUBERNETES_INFO="$( lk8s_ssh_to_node $_CONTROL_PLANE_IP kubectl get nodes,services,deployments,pods )"
   local _BACKSLASH=$( printf '%b' '\134' ) # backslash
-  local _INFO="$( cat <<EOF
-Your Kubernetes installation info:
+
+  lk8s_log "Your Kubernetes installation info:
 $_KUBERNETES_INFO
 
 Accessing Control Plane via SSH:
@@ -847,12 +854,9 @@ You can view detailed installation log at:
   $LK8S_LOG_FILE
   
 To delete sample app run following on Control plane:
-  kubectl get services,deployments --no-headers -o name $_BACKSLASH
+  kubectl get services,deployments --no-headers -o name \\
     -l cfstackname=$LK8S_CLOUDFORMATION_STACKNAME | xargs kubectl delete
-
-EOF
-)"
-  lk8s_log "$_INFO"
+"
   echo
   lk8s_log "Installation COMPLETED."
   
@@ -1112,7 +1116,7 @@ lk8s_wait_for_node_to_be_ready()
 
 lk8s_destroy_installation()
 {
-  local _CMD_TO_RUN="aws cloudformation delete-stack --stack-name=$LK8S_CLOUDFORMATION_STACKNAME"
+  local _CMD_TO_RUN="aws cloudformation delete-stack --region \"$LK8S_REGION\" --stack-name \"$LK8S_CLOUDFORMATION_STACKNAME\""
   
   [ "$LK8S_DRY_RUN" = "yes" ] && {
     echo "[DRY RUN] $_CMD_TO_RUN"
@@ -1122,7 +1126,8 @@ lk8s_destroy_installation()
   local _ANSWER="no"
   
   echo "This action will destroy CloudFormation stack '$LK8S_CLOUDFORMATION_STACKNAME' ($LK8S_REGION)."
-  read -p "Type 'yes' to continue: " _ANSWER
+  printf "Type 'yes' to continue: "
+  read _ANSWER
   
   [ "$_ANSWER" != "yes" ] && {
     echo "Aborted."
@@ -1142,7 +1147,8 @@ lk8s_destroy_installation()
     return 1
   }
   
-  $_CMD_TO_RUN >> $LK8S_LOG_FILE 2>&1
+  lk8s_log "Running cmd: $_CMD_TO_RUN"
+  eval $_CMD_TO_RUN 2>&1
   local _WAIT_COUNTER=1
   
   while :
@@ -1177,7 +1183,7 @@ lk8s_is_region_valid()
   local _REGIONS="$( lk8s_get_lightsail_regions 2>/dev/null )"
   local _VALID="false"
   
-  for region in $_REGIONS
+  for region in $( echo "$_REGIONS" )
   do
     [ "$region" = "$_REGION_NAME" ] && {
       _VALID="true"
@@ -1207,9 +1213,9 @@ lk8s_is_az_valid()
   local _NUMBER_OF_AZ=$( echo "$_AZ" | wc -w | tr -d ' ' )
   local _VALID=0
   
-  for our_az in $_AZ
+  for our_az in $( echo "$_AZ" )
   do
-    for their_az in $_AZ_LIST
+    for their_az in $( echo "$_AZ_LIST" )
     do
       [ "$our_az" = "$their_az" ] && _VALID=$(( $_VALID + 1 ))
     done
@@ -1285,7 +1291,7 @@ lk8s_get_monthly_estimated_cost()
 
 lk8s_missing_tool()
 {
-  for tool in $LK8S_REQUIRED_TOOLS
+  for tool in $( echo "$LK8S_REQUIRED_TOOLS" )
   do
     command -v $tool >/dev/null || {
       echo "$tool"

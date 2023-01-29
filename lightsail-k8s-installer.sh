@@ -287,6 +287,7 @@ lk8s_cf_template_nodes()
       --cf-stackname "$LK8S_CLOUDFORMATION_STACKNAME" \
       --installation-id "$LK8S_INSTALLATION_ID" \
       --instance-name "$_NODE_PREFIX-$_RANDOM_ID" \
+      --keypair-name "$LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME" \
       --node-type "$_NODE_TYPE" \
       --resource-name "$_RESOURCE_NAME" \
       --ssh-allow-cidr "$LK8S_FIREWALL_SSH_ALLOW_CIDR" \
@@ -479,13 +480,15 @@ lk8s_run_cloudformation()
   cat <<EOF
 This process will create Kubernetes cluster on Amazon Lightsail.
 
-CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
-              Region: $LK8S_REGION
-     AZs worker pool: $LK8S_AZ_POOL
-           Resources: - $LK8S_NUMBER_OF_CP_NODES control plane node (plan: \$${_CP_PRICE})
-                      - $LK8S_NUMBER_OF_WORKER_NODES worker nodes (plan: \$${_WORKER_PRICE})
-                      - 1 load balancer (plan: \$18)
-      Estimated cost: \$${_MONTHLY_COST}/month or \$${_HOURLY_COST}/hour
+  CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
+                Region: $LK8S_REGION
+       AZs worker pool: $LK8S_AZ_POOL
+             Resources: - $LK8S_NUMBER_OF_CP_NODES control plane node (plan: \$${_CP_PRICE})
+                        - $LK8S_NUMBER_OF_WORKER_NODES worker nodes (plan: \$${_WORKER_PRICE})
+                        - 1 load balancer (plan: \$18)
+      Estimated cost. : \$${_MONTHLY_COST}/month or \$${_HOURLY_COST}/hour
+Lightsail SSH key pair: $LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME
+  SSH private key file: $LK8S_SSH_PRIVATE_KEY_FILE
 EOF
   
   echo
@@ -604,8 +607,12 @@ lk8s_update_cloudformation()
   local _ANY_KEY=""
   local _WORKER_PRICE=$( lk8s_get_worker_plan_price )
   
-  local _CURRENT_CF_TEMPLATE="$( aws cloudformation get-template \
-    --stack-name "$LK8S_CLOUDFORMATION_STACKNAME" --output text | head -n -3)"
+  # Remove last 3 lines from template since it just a identifier
+  local _CURRENT_CF_TEMPLATE="$( 
+    _TPL="$( aws cloudformation get-template --stack-name "$LK8S_CLOUDFORMATION_STACKNAME" --output text )" && \
+    _LINE="$(( $( echo "$_TPL" | wc -l ) - 3 ))" && \
+    echo "$_TPL" | head -n $_LINE
+  )"
 
   local _WORKER_TEMPLATE="$(
 lk8s_cf_template_nodes \
@@ -632,10 +639,12 @@ $_WORKER_TEMPLATE
   cat <<EOF
 This process will update your Kubernetes cluster on Amazon Lightsail.
 
-CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
-              Region: $LK8S_REGION
-     AZs worker pool: $LK8S_AZ_POOL
-       New resources: $LK8S_NUMBER_OF_WORKER_NODES worker node(s) (plan: \$${_WORKER_PRICE})
+  CloudFormation stack: $LK8S_CLOUDFORMATION_STACKNAME
+                Region: $LK8S_REGION
+       AZs worker pool: $LK8S_AZ_POOL
+         New resources: $LK8S_NUMBER_OF_WORKER_NODES worker node(s) (plan: \$${_WORKER_PRICE})
+Lightsail SSH key pair: $LK8S_SSH_LIGHTSAIL_KEYPAIR_NAME
+  SSH private key file: $LK8S_SSH_PRIVATE_KEY_FILE
 EOF
 
   echo
@@ -751,10 +760,10 @@ lk8s_run_post_command_control_plance_nodes()
     --ignore-preflight-errors=NumCPU,Mem  
 }
   
-[ ! -d /home/ec2-user/.kube ] && (
-  mkdir -p $HOME/.kube
-  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+[ ! -d \$HOME/.kube ] && (
+  mkdir -p \$HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf \$HOME/.kube/config
+  sudo chown \$(id -u):\$(id -g) \$HOME/.kube/config
 )
 
 CP_NODE_STATUS="\$( kubectl get nodes --no-headers | awk '{print \$2}' )"

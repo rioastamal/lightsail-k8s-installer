@@ -317,13 +317,14 @@ ssh-add /path/to/your/ssh-private.key
 - [ ] Ability to delete worker node
 - [ ] Kubernetes dashboard
 - [ ] Custom tags for node
-- [ ] Options provide a container image and it's configuration
+- [ ] Options to provide a container image and it's configuration
 - [ ] Ability to choose OS for node
 
 ## Changelog
 
 #### v1.1 (2023-01-29)
 
+- Support for Windows (MINGW)
 - Bug fixes: 
   - Missing jq from the required tools
   - Wrong Lightsail SSH key pair name
@@ -332,7 +333,6 @@ ssh-add /path/to/your/ssh-private.key
   - Add compatibility with dash shell
   - Add compatibility with zsh shell
   - Replace GNU's `head` with standard `head`
-- Support for Windows (Git Bash)
 
 #### v1.0 (2023-01-27)
 
